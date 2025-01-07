@@ -6,6 +6,9 @@ import (
 	"path/filepath"
 )
 
+// takes a directory path and returns all *.json files in it
+// doesn't travers sub directories.
+// if no files are found returns nil
 func CollectJsonFiles(p string) ([]string, error) {
 
 	f, err := os.Stat(p)
