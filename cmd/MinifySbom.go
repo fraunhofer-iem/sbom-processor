@@ -18,8 +18,14 @@ func main() {
 
 	// get input path and check for correctness
 	flag.Parse()
-	validator.ValidateInPath(in)
-	validator.ValidateOutPath(out)
+	_, err := validator.ValidateInPath(in)
+	if err != nil {
+		log.Fatal(err)
+	}
+	err = validator.ValidateOutPath(out)
+	if err != nil {
+		log.Fatal(err)
+	}
 
 	paths, err := json.CollectJsonFiles(*in)
 	if err != nil {
