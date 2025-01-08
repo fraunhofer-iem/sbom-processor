@@ -72,14 +72,15 @@ func ReadSyft(p string) (*SyftSbom, error) {
 		return nil, err
 	}
 
-	if len(sbom.Artifacts) == 0 {
-		return nil, fmt.Errorf("no artifacts found")
+	if sbom.Artifacts == nil ||
+		sbom.ArtifactRelationships == nil {
+		return nil, fmt.Errorf("incomplete syft sbom")
 	}
 
 	return &sbom, nil
 }
 
-func (s *SyftSbom) TransformSbom() (*CyclonedxSbom, error) {
+func (s *SyftSbom) Transform() (*CyclonedxSbom, error) {
 
 	// transform syft to cyclonedx
 	parentChild := make(map[string][]Target, len(s.Artifacts))

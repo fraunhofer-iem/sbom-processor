@@ -49,7 +49,7 @@ func main() {
 
 			fmt.Printf("Found %d artifacts.\n", len(s.Artifacts))
 
-			t, err := s.TransformSbom()
+			t, err := s.Transform()
 			if err != nil {
 				fmt.Printf("Transform failed with %s for %s\n", err.Error(), p)
 				return
