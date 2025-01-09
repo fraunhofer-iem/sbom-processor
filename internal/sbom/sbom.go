@@ -3,42 +3,13 @@ package sbom
 import (
 	"encoding/json"
 	"fmt"
+	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 )
-
-type SyftSbom struct {
-	Artifacts             []Component            `json:"artifacts"`
-	ArtifactRelationships []ArtifactRelationship `json:"artifactRelationships"`
-	Source                Source                 `json:"source"`
-	Distro                Distro                 `json:"distro"`
-}
-
-type Source struct {
-	Id      string `json:"id"`
-	Name    string `json:"name"`
-	Version string `json:"version"` // in our current example a SHA256
-}
-
-type Distro struct {
-	Id      string `json:"id"`
-	Version string `json:"versionID"`
-}
-
-type ArtifactRelationship struct {
-	Parent string `json:"parent"`
-	Child  string `json:"child"`
-	Type   string `json:"type"`
-}
-
-type Component struct {
-	Name     string `json:"name"`
-	Type     string `json:"type"`
-	Id       string `json:"id"`
-	Language string `json:"language"`
-	Version  string `json:"version"`
-}
 
 type Target struct {
 	Child string `json:"child"`
@@ -57,7 +28,19 @@ type CyclonedxSbom struct {
 	Distro       Distro       `json:"distro"`
 }
 
-func ReadSyft(p string) (*SyftSbom, error) {
+type DebVersionResponse struct {
+	Package string    `json:"package"`
+	Result  []Version `json:"result"`
+}
+
+type Version struct {
+	Version string `json:"version"`
+}
+
+const deb string = "deb"
+const debBasePath string = "https://snapshot.debian.org/mr/package/"
+
+func ReadCyclonedx(p string) (*CyclonedxSbom, error) {
 	file, err := os.Open(p)
 	if err != nil {
 		return nil, err
@@ -66,50 +49,66 @@ func ReadSyft(p string) (*SyftSbom, error) {
 	defer file.Close()
 
 	decoder := json.NewDecoder(file)
-	var sbom SyftSbom
+	var sbom CyclonedxSbom
 
 	if err := decoder.Decode(&sbom); err != nil {
 		return nil, err
 	}
 
-	if sbom.Artifacts == nil ||
-		sbom.ArtifactRelationships == nil {
-		return nil, fmt.Errorf("incomplete syft sbom")
+	if sbom.Components == nil ||
+		sbom.Dependencies == nil {
+		return nil, fmt.Errorf("incomplete sbom")
 	}
 
 	return &sbom, nil
 }
 
-func (s *SyftSbom) Transform() (*CyclonedxSbom, error) {
-
-	// transform syft to cyclonedx
-	parentChild := make(map[string][]Target, len(s.Artifacts))
-	for _, r := range s.ArtifactRelationships {
-		child := Target{
-			Child: r.Child,
-			Type:  r.Type,
-		}
-
-		// Append directly to the map
-		parentChild[r.Parent] = append(parentChild[r.Parent], child)
+func (c *Component) GetVersions() ([]string, error) {
+	if c.Type == deb {
+		return getDebVersions(debBasePath, c.Name)
 	}
 
-	var dependencies []Dependency
+	return nil, fmt.Errorf("unkown component type for %+v", *c)
+}
 
-	for key, value := range parentChild {
-		dependencies = append(dependencies, Dependency{
-			Ref:       key,
-			DependsOn: value,
-		})
+func getDebVersions(basePath string, n string) ([]string, error) {
+
+	if n == "" {
+		return nil, fmt.Errorf("can't get version information for empty package name")
 	}
 
-	return &CyclonedxSbom{
-		Components:   s.Artifacts,
-		Dependencies: dependencies,
-		Source:       s.Source,
-		Distro:       s.Distro,
-	}, nil
+	encodedName := url.QueryEscape(n)
 
+	// Ensure the basePath ends with a slash
+	if !strings.HasSuffix(basePath, "/") {
+		basePath += "/"
+	}
+
+	url := basePath + encodedName // Use simple concatenation for URLs
+
+	resp, err := http.Get(url)
+	if err != nil {
+		return nil, err
+	}
+
+	defer resp.Body.Close()
+
+	decoder := json.NewDecoder(resp.Body)
+	var versionResponse DebVersionResponse
+	if err := decoder.Decode(&versionResponse); err != nil {
+		return nil, fmt.Errorf("decode of response for %s failed", encodedName)
+	}
+
+	if versionResponse.Result == nil {
+		return nil, fmt.Errorf("empty result for %s", encodedName)
+	}
+
+	var versions = make([]string, len(versionResponse.Result))
+	for i, r := range versionResponse.Result {
+		versions[i] = r.Version
+	}
+
+	return versions, nil
 }
 
 func (c *CyclonedxSbom) Store(out string) error {
