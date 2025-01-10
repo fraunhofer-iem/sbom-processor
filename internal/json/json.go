@@ -1,9 +1,9 @@
 package json
 
 import (
-	"io/fs"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 // takes a directory path and returns all *.json files in it
@@ -19,23 +19,41 @@ func CollectJsonFiles(p string) ([]string, error) {
 
 	if f.IsDir() {
 
-		filepath.WalkDir(p, func(path string, d fs.DirEntry, err error) error {
-			if err != nil {
-				return err
-			}
+		dirs, err := os.ReadDir(p)
+		if err != nil {
+			return nil, err
+		}
 
+		for _, d := range dirs {
 			if d.IsDir() {
-				return nil
+				continue
 			}
 
-			if filepath.Ext(path) != ".json" {
-				return nil
+			if !strings.HasSuffix(d.Name(), ".json") {
+				continue
 			}
 
-			paths = append(paths, path)
+			p := filepath.Join(p, d.Name())
+			paths = append(paths, p)
+		}
 
-			return nil
-		})
+		// filepath.WalkDir(p, func(path string, d fs.DirEntry, err error) error {
+		// 	if err != nil {
+		// 		return err
+		// 	}
+
+		// 	if d.IsDir() {
+		// 		return nil
+		// 	}
+
+		// 	if filepath.Ext(path) != ".json" {
+		// 		return nil
+		// 	}
+
+		// 	paths = append(paths, path)
+
+		// 	return nil
+		// })
 	} else {
 		if filepath.Ext(p) != ".json" {
 			return paths, nil

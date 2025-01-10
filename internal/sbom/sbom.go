@@ -6,9 +6,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
-	"path/filepath"
 	"strings"
-	"time"
 )
 
 type Target struct {
@@ -112,10 +110,8 @@ func getDebVersions(basePath string, n string) ([]string, error) {
 }
 
 func (c *CyclonedxSbom) Store(out string) error {
-	t := time.Now().Format("20060102150405") // Format: YYYYMMDDHHMMSS
-	outPath := filepath.Join(out, t+"-json")
 
-	outFile, err := os.Create(outPath)
+	outFile, err := os.Create(out)
 	if err != nil {
 		return err
 	}
