@@ -48,14 +48,28 @@ func main() {
 				return
 			}
 
-			for _, c := range s.Components {
+			vd := make([]*semver.VersionDistance, len(s.Components))
+
+			for i, c := range s.Components {
 				ver, err := c.GetVersions()
 				if err != nil {
 					fmt.Printf("query for %+v failed with %s", c, err)
 					continue
 				}
-				semver.GetVersionDistance(c.Version, ver)
+				v, err := semver.GetVersionDistance(c.Version, ver)
+				if err != nil {
+					continue
+
+				}
+				vd[i] = v
 			}
+
+			var avg int64 = 0
+			for _, v := range vd {
+				avg += v.MissedReleases
+			}
+			avg = avg / int64(len(vd))
+			fmt.Printf("Avg missed releases for %s is %d", p, avg)
 
 			// fmt.Printf("Found %d artifacts.\n", len(s.Artifacts))
 
@@ -71,7 +85,7 @@ func main() {
 			// 	return
 			// }
 
-			// fmt.Printf("Finished SBOM minify for path %s\n", p)
+			fmt.Printf("Finished SBOM processing for path %s\n", p)
 		}()
 	}
 
