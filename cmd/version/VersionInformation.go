@@ -1,15 +1,18 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"log"
-	"sync"
+	"runtime"
 
 	"sbom-processor/internal/json"
 	"sbom-processor/internal/sbom"
 	"sbom-processor/internal/semver"
 	"sbom-processor/internal/validator"
+
+	"golang.org/x/sync/semaphore"
 )
 
 var in = flag.String("in", "", "Path to SBOM")
@@ -32,15 +35,25 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
+	ctx := context.TODO()
 
-	var wg sync.WaitGroup
+	var (
+		maxWorkers = runtime.GOMAXPROCS(0) // 0 = default = maxNumProc
+		sem        = semaphore.NewWeighted(int64(maxWorkers))
+	)
+
+	fmt.Printf("Starting up to %d workers\n", maxWorkers)
+
 	for _, p := range paths {
-		wg.Add(1)
+		// When maxWorkers goroutines are in flight, Acquire blocks until one of the
+		// workers finishes.
+		if err := sem.Acquire(ctx, 1); err != nil {
+			log.Printf("Failed to acquire semaphore: %v", err)
+			break
+		}
+
 		go func() {
-
-			defer wg.Done()
-
-			fmt.Printf("started SBOM process for path %s\n", p)
+			defer sem.Release(1)
 
 			s, err := sbom.ReadCyclonedx(p)
 			if err != nil {
@@ -71,24 +84,14 @@ func main() {
 			avg = avg / int64(len(vd))
 			fmt.Printf("Avg missed releases for %s is %d", p, avg)
 
-			// fmt.Printf("Found %d artifacts.\n", len(s.Artifacts))
-
-			// t, err := s.Transform()
-			// if err != nil {
-			// 	fmt.Printf("Transform failed with %s for %s\n", err.Error(), p)
-			// 	return
-			// }
-
-			// err = t.Store(*out)
-			// if err != nil {
-			// 	fmt.Printf("Store failed with %s for %s\n", err.Error(), p)
-			// 	return
-			// }
-
 			fmt.Printf("Finished SBOM processing for path %s\n", p)
 		}()
 	}
 
-	wg.Wait()
+	// Acquire all of the tokens to wait for any remaining workers to finish.
+	if err := sem.Acquire(ctx, int64(maxWorkers)); err != nil {
+		log.Printf("Failed to acquire semaphore: %v", err)
+	}
+
 	fmt.Println("Finished main")
 }

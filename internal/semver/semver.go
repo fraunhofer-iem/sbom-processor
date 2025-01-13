@@ -22,16 +22,22 @@ func GetVersionDistance(usedVersion string, versions []string) (*VersionDistance
 		return nil, err
 	}
 
-	semVers := make([]*version.Version, len(versions))
-	for i, v := range versions {
+	var semVers []*version.Version
+	for _, v := range versions {
 		semVer, err := version.NewVersion(v)
 		if err != nil {
-			fmt.Printf("can't parse %s to semver", v)
+			fmt.Printf("can't parse %s to semver\n", v)
 			continue
 		}
-		semVers[i] = semVer
+		semVers = append(semVers, semVer)
 	}
-	sort.Sort(version.Collection(semVers))
+
+	slices.SortFunc(semVers, func(a *version.Version, b *version.Version) int {
+		if a == nil || b == nil {
+			return 0
+		}
+		return a.Compare(b)
+	})
 
 	i := sort.Search(len(semVers),
 		func(i int) bool { return semVers[i].GreaterThanOrEqual(usedSemver) })
