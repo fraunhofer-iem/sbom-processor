@@ -82,7 +82,7 @@ func getDebVersions(basePath string, n string) ([]string, error) {
 		basePath += "/"
 	}
 
-	url := basePath + encodedName // Use simple concatenation for URLs
+	url := basePath + encodedName
 
 	resp, err := http.Get(url)
 	if err != nil {
@@ -94,7 +94,7 @@ func getDebVersions(basePath string, n string) ([]string, error) {
 	decoder := json.NewDecoder(resp.Body)
 	var versionResponse DebVersionResponse
 	if err := decoder.Decode(&versionResponse); err != nil {
-		return nil, fmt.Errorf("decode of response for %s failed", encodedName)
+		return nil, fmt.Errorf("decode of response for %s failed. Response status %s", encodedName, resp.Status)
 	}
 
 	if versionResponse.Result == nil {

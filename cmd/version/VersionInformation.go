@@ -61,11 +61,13 @@ func main() {
 				return
 			}
 
-			vd := make([]*semver.VersionDistance, len(s.Components))
+			var vd []*semver.VersionDistance
+			errCounter := 0
 
-			for i, c := range s.Components {
+			for _, c := range s.Components {
 				ver, err := c.GetVersions()
 				if err != nil {
+					errCounter += 1
 					fmt.Printf("query for %+v failed with %s\n", c, err)
 					continue
 				}
@@ -74,8 +76,10 @@ func main() {
 					continue
 
 				}
-				vd[i] = v
+				vd = append(vd, v)
 			}
+
+			fmt.Printf("%d of %d querries failed \n", errCounter, len(s.Components))
 
 			var avg int64 = 0
 			for _, v := range vd {
