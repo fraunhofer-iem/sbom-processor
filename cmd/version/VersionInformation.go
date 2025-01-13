@@ -66,7 +66,7 @@ func main() {
 			for i, c := range s.Components {
 				ver, err := c.GetVersions()
 				if err != nil {
-					fmt.Printf("query for %+v failed with %s", c, err)
+					fmt.Printf("query for %+v failed with %s\n", c, err)
 					continue
 				}
 				v, err := semver.GetVersionDistance(c.Version, ver)
@@ -79,10 +79,13 @@ func main() {
 
 			var avg int64 = 0
 			for _, v := range vd {
+				if v == nil {
+					continue
+				}
 				avg += v.MissedReleases
 			}
 			avg = avg / int64(len(vd))
-			fmt.Printf("Avg missed releases for %s is %d", p, avg)
+			fmt.Printf("Avg missed releases for %s is %d\n", p, avg)
 
 			fmt.Printf("Finished SBOM processing for path %s\n", p)
 		}()

@@ -103,5 +103,4 @@ func TestVersionParsing(t *testing.T) {
 		fmt.Printf("%+v\n", v)
 
 	}
-
 }
