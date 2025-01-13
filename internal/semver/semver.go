@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"slices"
 	"sort"
+	"strings"
 
 	"github.com/hashicorp/go-version"
 )
@@ -15,16 +16,46 @@ type VersionDistance struct {
 	MissedPatch    int64
 }
 
+func newRelaxedSemver(raw string) (*version.Version, error) {
+
+	v, err := version.NewVersion(raw)
+	if err != nil {
+		// example: 1.6.5+git20160407+5e5d3-1
+		if strings.Count(raw, "+") > 1 {
+			split := strings.Split(raw, "+")
+			modified := split[0] + "+" + split[1]
+			for i := 2; i < len(split); i++ {
+				modified = modified + "-" + split[i]
+			}
+			return newRelaxedSemver(modified)
+		}
+		// example: 2.5.1.ds1-4
+		if strings.Count(raw, ".") > 2 {
+			split := strings.Split(raw, ".")
+			modified := split[0] + "." + split[1]
+
+			for i := 2; i < len(split); i++ {
+				modified = modified + "-" + split[i]
+			}
+			return newRelaxedSemver(modified)
+
+		}
+		return nil, err
+	}
+
+	return v, nil
+}
+
 func GetVersionDistance(usedVersion string, versions []string) (*VersionDistance, error) {
 
-	usedSemver, err := version.NewVersion(usedVersion)
+	usedSemver, err := newRelaxedSemver(usedVersion)
 	if err != nil {
 		return nil, err
 	}
 
 	var semVers []*version.Version
 	for _, v := range versions {
-		semVer, err := version.NewVersion(v)
+		semVer, err := newRelaxedSemver(v)
 		if err != nil {
 			fmt.Printf("can't parse %s to semver\n", v)
 			continue
