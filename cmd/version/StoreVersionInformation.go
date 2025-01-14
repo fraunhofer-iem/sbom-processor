@@ -5,6 +5,7 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"os"
 	"runtime"
 
 	"sbom-processor/internal/json"
@@ -12,34 +13,72 @@ import (
 	"sbom-processor/internal/semver"
 	"sbom-processor/internal/validator"
 
+	"go.mongodb.org/mongo-driver/v2/bson"
+	"go.mongodb.org/mongo-driver/v2/mongo"
+	"go.mongodb.org/mongo-driver/v2/mongo/options"
 	"golang.org/x/sync/semaphore"
 )
 
 var in = flag.String("in", "", "Path to SBOM")
-var out = flag.String("out", "", "File to write the SBOM to")
 
 func main() {
+
+	// INPUT VALIDATION
+	uri := os.Getenv("MONGO_URI")
+	usr := os.Getenv("MONGO_USERNAME")
+	pwd := os.Getenv("MONGO_PWD")
+
+	if usr == "" || pwd == "" || uri == "" {
+		log.Fatalf("username or password not found. Make sure MONGO_USERNAME, MONGO_PWD, and MONGO_URI are set\n")
+	}
 
 	// get input path and check for correctness
 	flag.Parse()
 	_, err := validator.ValidateInPath(in)
 	if err != nil {
-		log.Fatal(err)
-	}
-	err = validator.ValidateOutPath(out)
-	if err != nil {
-		log.Fatal(err)
+		panic(err)
 	}
 
+	// DB CONNECTION
+	client, err := mongo.Connect(options.Client().
+		ApplyURI(uri).
+		SetAuth(options.Credential{
+			Username: usr,
+			Password: pwd,
+		}))
+	if err != nil {
+		panic(err)
+	}
+
+	defer func() {
+		if err := client.Disconnect(context.TODO()); err != nil {
+			panic(err)
+		}
+	}()
+
+	coll := client.Database("sbom_metadata").Collection("versions")
+
+	// CREATE INDEX
+	indexModel := mongo.IndexModel{
+		Keys: bson.D{{Key: "component_id", Value: 1}},
+	}
+	name, err := coll.Indexes().CreateOne(context.TODO(), indexModel)
+	if err != nil {
+		panic(err)
+	}
+	fmt.Println("Name of Index Created: " + name)
+
+	// GET JSON FILE PATHS
 	paths, err := json.CollectJsonFiles(*in)
 	if err != nil {
-		log.Fatal(err)
+		panic(err)
 	}
-	ctx := context.TODO()
 
+	// ASYNC ITERATION OF FILES AND STORE TO DB
 	var (
 		maxWorkers = runtime.GOMAXPROCS(0) // 0 = default = maxNumProc
 		sem        = semaphore.NewWeighted(int64(maxWorkers))
+		ctx        = context.TODO()
 	)
 
 	fmt.Printf("Starting up to %d workers\n", maxWorkers)
@@ -61,9 +100,9 @@ func main() {
 				return
 			}
 
-			var vd []*semver.VersionDistance
 			errCounter := 0
 
+			// GET ALL VERSIONS FOR EACH COMPONENT AND INSERT TO DB
 			for _, c := range s.Components {
 				ver, err := c.GetVersions()
 				if err != nil {
@@ -71,25 +110,25 @@ func main() {
 					fmt.Printf("query for %+v failed with %s\n", c, err)
 					continue
 				}
-				v, err := semver.GetVersionDistance(c.Version, ver)
-				if err != nil {
-					continue
 
+				compVer := make([]semver.ComponentVersion, len(ver))
+				for i, v := range ver {
+					compVer[i] = semver.ComponentVersion{
+						Version:     v,
+						ReleaseDate: "",
+					}
 				}
-				vd = append(vd, v)
+				compVers := semver.ComponentVersions{
+					ComponentId: c.Id,
+					Versions:    compVer,
+				}
+				_, err = coll.InsertOne(ctx, compVers)
+				if err != nil {
+					fmt.Printf("db store failed with %s\n", err)
+				}
 			}
 
 			fmt.Printf("%d of %d querries failed \n", errCounter, len(s.Components))
-
-			var avg int64 = 0
-			for _, v := range vd {
-				if v == nil {
-					continue
-				}
-				avg += v.MissedReleases
-			}
-			avg = avg / int64(len(vd))
-			fmt.Printf("Avg missed releases for %s is %d\n", p, avg)
 
 			fmt.Printf("Finished SBOM processing for path %s\n", p)
 		}()

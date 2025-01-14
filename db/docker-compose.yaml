@@ -1,0 +1,15 @@
+services:
+  db:
+    env_file:
+      - .env
+    image: mongo:latest
+    ports:
+      - "27017:27017"
+    container_name: sbom_db
+    volumes: 
+      - dbvolume:/data/db
+    environment:
+      - MONGO_INITDB_ROOT_USERNAME=${MONGO_USERNAME}
+      - MONGO_INITDB_ROOT_PASSWORD=${MONGO_PWD}
+volumes:
+  dbvolume:

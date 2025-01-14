@@ -16,6 +16,19 @@ type VersionDistance struct {
 	MissedPatch    int64
 }
 
+type ComponentVersions struct {
+	ComponentId string             `bson:"component_id"`
+	Versions    []ComponentVersion `bson:"versions"`
+}
+
+type ComponentVersion struct {
+	Version     string `bson:"version"`
+	ReleaseDate string `bson:"release_date"`
+	// Vulnerabilitites []string `bson:"vulnerabilitites,omitempty"` // this is a list of vulnerability IDs
+}
+
+// type Vulnerability struct{}
+
 func newRelaxedSemver(raw string) (*version.Version, error) {
 
 	v, err := version.NewVersion(raw)
