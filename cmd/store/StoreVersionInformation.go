@@ -8,6 +8,7 @@ import (
 	"os"
 	"runtime"
 
+	"sbom-processor/internal/db"
 	"sbom-processor/internal/json"
 	"sbom-processor/internal/sbom"
 	"sbom-processor/internal/semver"
@@ -29,7 +30,7 @@ func main() {
 	pwd := os.Getenv("MONGO_PWD")
 
 	if usr == "" || pwd == "" || uri == "" {
-		log.Fatalf("username or password not found. Make sure MONGO_USERNAME, MONGO_PWD, and MONGO_URI are set\n")
+		log.Fatalf("uri, username or password not found. Make sure MONGO_USERNAME, MONGO_PWD, and MONGO_URI are set\n")
 	}
 
 	// get input path and check for correctness
@@ -51,22 +52,23 @@ func main() {
 	}
 
 	defer func() {
-		if err := client.Disconnect(context.TODO()); err != nil {
+		if err := client.Disconnect(context.Background()); err != nil {
 			panic(err)
 		}
 	}()
 
 	coll := client.Database("sbom_metadata").Collection("versions")
+	blackList := client.Database("sbom_metadata").Collection("blacklist")
 
-	// CREATE INDEX
-	indexModel := mongo.IndexModel{
-		Keys: bson.D{{Key: "component_id", Value: 1}},
-	}
-	name, err := coll.Indexes().CreateOne(context.TODO(), indexModel)
+	err = db.CreateIdx(coll, "component_id")
 	if err != nil {
-		panic(err)
+		fmt.Printf("Index creation failed with %s\n", err)
 	}
-	fmt.Println("Name of Index Created: " + name)
+
+	err = db.CreateIdx(blackList, "id")
+	if err != nil {
+		fmt.Printf("Index creation failed with %s\n", err)
+	}
 
 	// GET JSON FILE PATHS
 	paths, err := json.CollectJsonFiles(*in)
@@ -101,13 +103,34 @@ func main() {
 			}
 
 			errCounter := 0
+			cashCounter := 0
 
 			// GET ALL VERSIONS FOR EACH COMPONENT AND INSERT TO DB
 			for _, c := range s.Components {
+				// check if versions are in db before continue
+				err := blackList.FindOne(ctx, bson.D{{Key: "id", Value: c.Id}}).Err()
+				if err == nil || err != mongo.ErrNoDocuments {
+					fmt.Printf("Versions for %+v in blacklist db\n", c)
+					cashCounter += 1
+					continue
+				}
+
+				filter := bson.D{{Key: "component_id", Value: c.Id}}
+				err = coll.FindOne(ctx, filter).Err()
+				if err == nil || err != mongo.ErrNoDocuments {
+					fmt.Printf("Versions for %+v already in db\n", c)
+					cashCounter += 1
+					continue
+				}
+
 				ver, err := c.GetVersions()
 				if err != nil {
 					errCounter += 1
 					fmt.Printf("query for %+v failed with %s\n", c, err)
+					_, err = blackList.InsertOne(ctx, bson.M{"id": c.Id})
+					if err != nil {
+						fmt.Printf("db store failed with %s\n", err)
+					}
 					continue
 				}
 
@@ -128,6 +151,7 @@ func main() {
 				}
 			}
 
+			fmt.Printf("%d of %d querries found in cash\n", cashCounter, len(s.Components))
 			fmt.Printf("%d of %d querries failed \n", errCounter, len(s.Components))
 
 			fmt.Printf("Finished SBOM processing for path %s\n", p)

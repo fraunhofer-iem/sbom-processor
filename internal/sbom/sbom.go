@@ -109,7 +109,7 @@ func getDebVersions(basePath string, n string) ([]string, error) {
 	return versions, nil
 }
 
-func (c *CyclonedxSbom) Store(out string) error {
+func (c *CyclonedxSbom) StoreToFile(out string) error {
 
 	outFile, err := os.Create(out)
 	if err != nil {
