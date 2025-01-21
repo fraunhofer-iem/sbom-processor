@@ -8,6 +8,8 @@ import (
 	"os"
 	"time"
 
+	"sbom-processor/internal/store"
+
 	"go.mongodb.org/mongo-driver/v2/mongo"
 	"go.mongodb.org/mongo-driver/v2/mongo/options"
 )
@@ -52,7 +54,7 @@ func main() {
 	}()
 
 	if *mode == "sboms" {
-		StoreCyclonedx(in, client)
+		store.StoreCyclonedx(in, client)
 	}
 
 	fmt.Println("Finished main")
