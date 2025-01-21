@@ -1,12 +1,17 @@
 package sbom
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/url"
 	"os"
+	"sbom-processor/internal/semver"
 	"strings"
+
+	"go.mongodb.org/mongo-driver/v2/bson"
+	"go.mongodb.org/mongo-driver/v2/mongo"
 )
 
 type Target struct {
@@ -61,12 +66,53 @@ func ReadCyclonedx(p string) (*CyclonedxSbom, error) {
 	return &sbom, nil
 }
 
-func (c *Component) GetVersions() ([]string, error) {
-	if c.Type == deb {
-		return getDebVersions(debBasePath, c.Name)
+func (c *Component) IsInCache(cache, blackList *mongo.Collection) bool {
+	// check if versions are in db before continue
+	err := blackList.FindOne(context.TODO(), bson.D{{Key: "id", Value: c.Id}}).Err()
+	if err == nil || err != mongo.ErrNoDocuments {
+		fmt.Printf("Versions for %+v in blacklist db\n", c)
+		return true
 	}
 
-	return nil, fmt.Errorf("unkown component type for %+v", *c)
+	filter := bson.D{{Key: "component_id", Value: c.Id}}
+	err = cache.FindOne(context.TODO(), filter).Err()
+	if err == nil || err != mongo.ErrNoDocuments {
+		fmt.Printf("Versions for %+v already in db\n", c)
+		return true
+	}
+
+	return false
+}
+
+func (c *Component) GetVersions() (*semver.ComponentVersions, error) {
+	var raw []string
+	var err error
+
+	switch c.Type {
+	case deb:
+		raw, err = getDebVersions(debBasePath, c.Name)
+	default:
+		raw = nil
+		err = fmt.Errorf("unkown component type")
+	}
+
+	if err != nil {
+		return nil, err
+	}
+
+	compVer := make([]semver.ComponentVersion, len(raw))
+	for i, v := range raw {
+		compVer[i] = semver.ComponentVersion{
+			Version:     v,
+			ReleaseDate: "",
+		}
+	}
+	compVers := semver.ComponentVersions{
+		ComponentId: c.Id,
+		Versions:    compVer,
+	}
+
+	return &compVers, nil
 }
 
 func getDebVersions(basePath string, n string) ([]string, error) {
