@@ -14,9 +14,15 @@ type SyftSbom struct {
 }
 
 type Source struct {
-	Id      string `json:"id"`
-	Name    string `json:"name"`
-	Version string `json:"version"` // in our current example a SHA256
+	Id       string   `json:"id"`
+	Name     string   `json:"name"`
+	Version  string   `json:"version"` // in our current example a SHA256
+	Metadata Metadata `json:"metadata"`
+}
+
+type Metadata struct {
+	Labels  map[string]string `json:"labels"`
+	ImageId string            `json:"imageID"`
 }
 
 type Distro struct {

@@ -5,7 +5,6 @@ import (
 	"flag"
 	"fmt"
 	"log"
-	"os"
 	"path/filepath"
 	"runtime"
 	"time"
@@ -14,15 +13,11 @@ import (
 	"sbom-processor/internal/sbom"
 	"sbom-processor/internal/validator"
 
-	"go.mongodb.org/mongo-driver/v2/bson"
-	"go.mongodb.org/mongo-driver/v2/mongo"
-	"go.mongodb.org/mongo-driver/v2/mongo/options"
 	"golang.org/x/sync/semaphore"
 )
 
 var in = flag.String("in", "", "Path to SBOM")
 var out = flag.String("out", "", "File to write the SBOM to")
-var mode = flag.String("mode", "file", "Storage mode. Can be db or file. defaults to file. ")
 
 func main() {
 
@@ -34,45 +29,9 @@ func main() {
 		log.Fatal(err)
 	}
 
-	if *mode != "file" && *mode != "db" {
-		log.Fatalf("Invalid mode. Mode must be file or db.\n")
-	}
-
-	if *mode == "file" {
-		err = validator.ValidateOutPath(out)
-		if err != nil {
-			log.Fatal(err)
-		}
-	}
-
-	var coll *mongo.Collection
-	if *mode == "db" {
-		uri := os.Getenv("MONGO_URI")
-		usr := os.Getenv("MONGO_USERNAME")
-		pwd := os.Getenv("MONGO_PWD")
-
-		if usr == "" || pwd == "" || uri == "" {
-			log.Fatalf("uri, username, or password not found. Make sure MONGO_USERNAME, MONGO_PWD, and MONGO_URI are set\n")
-		}
-
-		// DB CONNECTION
-		client, err := mongo.Connect(options.Client().
-			ApplyURI(uri).
-			SetAuth(options.Credential{
-				Username: usr,
-				Password: pwd,
-			}))
-		if err != nil {
-			panic(err)
-		}
-
-		defer func() {
-			if err := client.Disconnect(context.Background()); err != nil {
-				panic(err)
-			}
-		}()
-
-		coll = client.Database("sbom_metadata").Collection("sboms")
+	err = validator.ValidateOutPath(out)
+	if err != nil {
+		log.Fatal(err)
 	}
 
 	paths, err := json.CollectJsonFiles(*in)
@@ -80,11 +39,10 @@ func main() {
 		log.Fatal(err)
 	}
 
-	ctx := context.TODO()
-
 	var (
 		maxWorkers = runtime.GOMAXPROCS(0) // 0 = default = maxNumProc
 		sem        = semaphore.NewWeighted(int64(maxWorkers))
+		ctx        = context.TODO()
 	)
 
 	fmt.Printf("Starting up to %d workers\n", maxWorkers)
@@ -116,21 +74,9 @@ func main() {
 				return
 			}
 
-			switch *mode {
-			case "file":
-				ts := time.Now().Format("20060102150405") // Format: YYYYMMDDHHMMSS
-				outPath := filepath.Join(*out, s.Source.Id+"-"+ts+".json")
-				err = t.StoreToFile(outPath)
-			case "db":
-				err = coll.FindOne(ctx, bson.D{{Key: "source.id", Value: s.Source.Id}}).Err()
-				if err != mongo.ErrNoDocuments || err == nil {
-					fmt.Println("Source id already in database")
-					break
-				}
-				_, err = coll.InsertOne(ctx, t)
-			default:
-				err = fmt.Errorf("unknown storage mode")
-			}
+			ts := time.Now().Format("20060102150405") // Format: YYYYMMDDHHMMSS
+			outPath := filepath.Join(*out, s.Source.Id+"-"+ts+".json")
+			err = t.StoreToFile(outPath)
 
 			if err != nil {
 				fmt.Printf("Store failed with %s for %s\n", err.Error(), p)
