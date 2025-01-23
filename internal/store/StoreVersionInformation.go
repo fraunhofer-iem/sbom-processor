@@ -8,6 +8,7 @@ import (
 
 	"sbom-processor/internal/db"
 	"sbom-processor/internal/sbom"
+	"sbom-processor/internal/semver"
 
 	"go.mongodb.org/mongo-driver/v2/bson"
 	"go.mongodb.org/mongo-driver/v2/mongo"
@@ -30,7 +31,7 @@ func StoreVersionInformation(client *mongo.Client) {
 		fmt.Printf("Index creation failed with %s\n", err)
 	}
 
-	// ASYNC ITERATION OF FILES AND STORE TO DB
+	// ASYNC ITERATION OF SBOMs AND STORE VERSIONS IN DB
 	var (
 		maxWorkers = runtime.GOMAXPROCS(0) // 0 = default = maxNumProc
 		sem        = semaphore.NewWeighted(int64(maxWorkers))
@@ -71,7 +72,7 @@ func StoreVersionInformation(client *mongo.Client) {
 
 }
 
-func StoreVersions(s sbom.CyclonedxSbom, sem *semaphore.Weighted, versions, blackList *mongo.Collection) {
+func StoreVersions(s sbom.CyclonedxSbom, sem *semaphore.Weighted, versionsColl, blackListColl *mongo.Collection) {
 	defer sem.Release(1)
 	fmt.Printf("Store versions for %s\n", s.Source.Name)
 
@@ -80,11 +81,21 @@ func StoreVersions(s sbom.CyclonedxSbom, sem *semaphore.Weighted, versions, blac
 		errCounter   = 0
 	)
 
+	versions := make([]*semver.ComponentVersions, 202)
+
 	// GET ALL VERSIONS FOR EACH COMPONENT AND INSERT TO DB
 	for _, c := range s.Components {
 
+		if len(versions) > 200 {
+			_, err := versionsColl.InsertMany(context.TODO(), versions)
+			if err != nil {
+				fmt.Printf("db store failed with %s\n", err)
+			}
+			versions = make([]*semver.ComponentVersions, 202)
+		}
+
 		// check if versions are in db before continue
-		if c.IsInCache(versions, blackList) {
+		if c.IsInCache(versionsColl, blackListColl) {
 			fmt.Printf("Versions for %+v in cache or blacklist db\n", c)
 			cacheCounter += 1
 			continue
@@ -94,17 +105,15 @@ func StoreVersions(s sbom.CyclonedxSbom, sem *semaphore.Weighted, versions, blac
 		if err != nil {
 			errCounter += 1
 			fmt.Printf("query for %+v failed with %s\n", c, err)
-			_, err = blackList.InsertOne(context.TODO(), bson.M{"id": c.Id})
+			_, err = blackListColl.InsertOne(context.TODO(), bson.M{"id": c.Id})
 			if err != nil {
 				fmt.Printf("db store failed with %s\n", err)
 			}
 			continue
 		}
 
-		_, err = versions.InsertOne(context.TODO(), ver)
-		if err != nil {
-			fmt.Printf("db store failed with %s\n", err)
-		}
+		versions = append(versions, ver)
+
 	}
 
 	fmt.Printf("%d of %d querries found in cash\n", cacheCounter, len(s.Components))
