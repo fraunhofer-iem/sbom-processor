@@ -18,6 +18,11 @@ func queryApi(cName string) (*MvnSearchResponse, error) {
 	}
 
 	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		err := fmt.Errorf("request failed with status code %d", resp.StatusCode)
+		fmt.Printf("Request failed with %s\n", err.Error())
+		return nil, err
+	}
 
 	var mvnRes MvnSearchResponse
 	decoder := json.NewDecoder(resp.Body)

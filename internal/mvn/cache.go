@@ -72,6 +72,7 @@ func componentWorker(mvnCache *MvnCache, components <-chan string, cache chan *M
 		mvnRes, err := queryApi(c)
 		if err != nil {
 			blacklist <- c
+			continue
 		}
 
 		switch {
