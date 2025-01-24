@@ -13,7 +13,7 @@ func queryApi(cName string) (*MvnSearchResponse, error) {
 	url := fmt.Sprintf("https://search.maven.org/solrsearch/select?q=a:%s&rows=20&wt=json", encodedName)
 	resp, err := http.Get(url)
 	if err != nil {
-		fmt.Printf("Request failed with %s\n", err.Error())
+		fmt.Printf("Request to %s failed with %s\n", url, err.Error())
 		return nil, err
 	}
 

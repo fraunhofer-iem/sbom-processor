@@ -181,7 +181,7 @@ func (cache *MvnCache) FillCache(sboms *mongo.Collection) error {
 			fmt.Printf("decode failed\n")
 			failed += 1
 			if failed%10 == 0 {
-				fmt.Printf("failed to process %d components", failed)
+				fmt.Printf("failed to process %d components\n", failed)
 			}
 			continue
 		}
@@ -189,7 +189,7 @@ func (cache *MvnCache) FillCache(sboms *mongo.Collection) error {
 		components <- res.Name
 		counter += 1
 		if counter%100 == 0 {
-			fmt.Printf("processed %d components", counter)
+			fmt.Printf("processed %d components\n", counter)
 		}
 	}
 
