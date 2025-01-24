@@ -2,15 +2,13 @@ package main
 
 import (
 	"context"
-	"flag"
 	"log"
 	"os"
+	"sbom-processor/internal/mvn"
 
 	"go.mongodb.org/mongo-driver/v2/mongo"
 	"go.mongodb.org/mongo-driver/v2/mongo/options"
 )
-
-var id = flag.String("id", "", "Optional: provide the source id of a specific db object to only scan it.")
 
 func main() {
 
@@ -40,7 +38,25 @@ func main() {
 		}
 	}()
 
-	versionsColl := client.Database("sbom_metadata").Collection("versions")
-	sbomsColl := client.Database("sbom_metadata").Collection("sboms")
+	db := client.Database("sbom_metadata")
+
+	cache := mvn.MvnCache{
+		MvnMirror:   db.Collection("mvn_mirror"),
+		MultiResult: db.Collection("multi_result"),
+		Blacklist:   db.Collection("blacklist"),
+		Ctx:         context.Background(),
+	}
+
+	sbomsColl := db.Collection("sboms")
+
+	cache.FillCache(sbomsColl)
+
+	// var results []bson.M
+	// if err = cursor.All(context.TODO(), &results); err != nil {
+	// 	panic(err)
+	// }
+
+	// fmt.Printf("%+v\n", results)
+	// fmt.Printf("length %d", len(results))
 
 }
