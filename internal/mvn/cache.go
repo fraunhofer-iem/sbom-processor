@@ -96,21 +96,33 @@ func resultCollector(cache *MvnCache, mirror <-chan *MvnCacheEntry, multiResult,
 		case ce := <-mirror:
 			mirrorBuffer = append(mirrorBuffer, *ce)
 			if len(mirrorBuffer) > 200 {
-				cache.MvnMirror.InsertMany(cache.Ctx, mirrorBuffer)
+				_, err := cache.MvnMirror.InsertMany(cache.Ctx, mirrorBuffer)
+				if err != nil {
+					fmt.Printf("MVN Mirror insert failed with %s \n", err.Error())
+				}
 				mirrorBuffer = []MvnCacheEntry{}
 				fmt.Println("successfully inserted 200 elements in mirror")
 			}
 		case f := <-blacklist:
 			blackListBuffer = append(blackListBuffer, f)
 			if len(blackListBuffer) > 200 {
-				cache.Blacklist.InsertMany(cache.Ctx, blackListBuffer)
+				_, err := cache.Blacklist.InsertMany(cache.Ctx, blackListBuffer)
+				if err != nil {
+					fmt.Printf("blacklist insert failed with %s \n", err.Error())
+				}
+				mirrorBuffer = []MvnCacheEntry{}
 				blackListBuffer = []string{}
 				fmt.Println("successfully inserted 200 elements in blacklist")
 			}
 		case m := <-multiResult:
 			multiBuffer = append(multiBuffer, m)
 			if len(multiBuffer) > 200 {
-				cache.MultiResult.InsertMany(cache.Ctx, multiBuffer)
+				_, err := cache.MultiResult.InsertMany(cache.Ctx, multiBuffer)
+				if err != nil {
+					fmt.Printf("multi result insert failed with %s \n", err.Error())
+				}
+				mirrorBuffer = []MvnCacheEntry{}
+
 				multiBuffer = []string{}
 				fmt.Println("successfully inserted 200 elements in multi")
 			}
