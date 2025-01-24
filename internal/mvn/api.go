@@ -19,6 +19,10 @@ func queryApi(cName string) (*MvnSearchResponse, error) {
 
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
+		if resp.StatusCode == http.StatusTooManyRequests {
+			retry := resp.Header.Get("Retry-After")
+			fmt.Printf("Failed due to too many requests. Retry-After %s\n", retry)
+		}
 		err := fmt.Errorf("request failed with status code %d", resp.StatusCode)
 		fmt.Printf("Request to %s failed with %s\n", url, err.Error())
 		return nil, err
