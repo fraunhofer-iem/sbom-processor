@@ -204,7 +204,7 @@ func (cache *MvnCache) isInCache(name string) bool {
 	var inCache = func(coll *mongo.Collection, key string) bool {
 		filter := bson.D{{Key: key, Value: name}}
 		err := coll.FindOne(cache.Ctx, filter).Err()
-		return err == mongo.ErrNoDocuments
+		return err != mongo.ErrNoDocuments
 	}
 
 	return inCache(cache.Blacklist, "name") &&
