@@ -43,27 +43,49 @@ type Version struct {
 const deb string = "deb"
 const debBasePath string = "https://snapshot.debian.org/mr/package/"
 
-func ReadCyclonedx(p string) (*CyclonedxSbom, error) {
-	file, err := os.Open(p)
-	if err != nil {
-		return nil, err
+type CyclonedxReader struct {
+	FileReader CycloneDxFileReader
+	DbReader   CycloneDxDbReader
+}
+
+type CycloneDxFileReader struct{}
+type CycloneDxDbReader struct {
+	Sboms mongo.Collection
+}
+
+type CycloneDxDbStore struct {
+	Sboms mongo.Collection
+}
+
+func (r *CycloneDxFileReader) Collect(i <-chan string, out chan *CyclonedxSbom, errc chan error) {
+	for p := range i {
+		var v CyclonedxSbom
+		func() {
+			file, err := os.Open(p)
+			if err != nil {
+				errc <- err
+			}
+			defer file.Close()
+
+			decoder := json.NewDecoder(file)
+
+			if err := decoder.Decode(&v); err != nil {
+				errc <- err
+			}
+
+			if v.Components == nil ||
+				v.Dependencies == nil {
+				errc <- fmt.Errorf("incomplete sbom")
+			}
+		}()
+
+		out <- &v
 	}
+}
 
-	defer file.Close()
-
-	decoder := json.NewDecoder(file)
-	var sbom CyclonedxSbom
-
-	if err := decoder.Decode(&sbom); err != nil {
-		return nil, err
-	}
-
-	if sbom.Components == nil ||
-		sbom.Dependencies == nil {
-		return nil, fmt.Errorf("incomplete sbom")
-	}
-
-	return &sbom, nil
+func (s *CycloneDxDbStore) StoreBulk(c context.Context, e []*CyclonedxSbom) error {
+	_, err := s.Sboms.InsertMany(c, e)
+	return err
 }
 
 func (c *Component) IsInCache(cache, blackList *mongo.Collection) bool {

@@ -44,8 +44,8 @@ type Component struct {
 	Version  string `json:"version"`
 }
 
-func ReadSyft(p string) (*SyftSbom, error) {
-	file, err := os.Open(p)
+func ReadSyft(p *string) (*SyftSbom, error) {
+	file, err := os.Open(*p)
 	if err != nil {
 		return nil, err
 	}
