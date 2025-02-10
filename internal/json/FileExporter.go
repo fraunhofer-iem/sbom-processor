@@ -3,10 +3,15 @@ package json
 import (
 	"encoding/json"
 	"os"
+	"sbom-processor/internal/sbom"
 )
 
 type JsonFileExporter struct {
 	Path string
+}
+
+type JsonSbom interface {
+	sbom.SyftSbom | sbom.CyclonedxSbom
 }
 
 func (e *JsonFileExporter) Store(path string, element any) error {

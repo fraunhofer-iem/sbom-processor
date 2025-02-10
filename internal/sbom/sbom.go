@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
-	"os"
 	"sbom-processor/internal/semver"
 	"strings"
 
@@ -55,37 +54,6 @@ type CycloneDxDbReader struct {
 
 type CycloneDxDbStore struct {
 	Sboms mongo.Collection
-}
-
-func (r *CycloneDxFileReader) Collect(i <-chan string, out chan *CyclonedxSbom, errc chan error) {
-	for p := range i {
-		var v CyclonedxSbom
-		func() {
-			file, err := os.Open(p)
-			if err != nil {
-				errc <- err
-			}
-			defer file.Close()
-
-			decoder := json.NewDecoder(file)
-
-			if err := decoder.Decode(&v); err != nil {
-				errc <- err
-			}
-
-			if v.Components == nil ||
-				v.Dependencies == nil {
-				errc <- fmt.Errorf("incomplete sbom")
-			}
-		}()
-
-		out <- &v
-	}
-}
-
-func (s *CycloneDxDbStore) StoreBulk(c context.Context, e []*CyclonedxSbom) error {
-	_, err := s.Sboms.InsertMany(c, e)
-	return err
 }
 
 func (c *Component) IsInCache(cache, blackList *mongo.Collection) bool {
@@ -175,22 +143,4 @@ func getDebVersions(basePath string, n string) ([]string, error) {
 	}
 
 	return versions, nil
-}
-
-func (c *CyclonedxSbom) StoreToFile(out string) error {
-
-	outFile, err := os.Create(out)
-	if err != nil {
-		return err
-	}
-
-	defer outFile.Close()
-
-	encoder := json.NewEncoder(outFile)
-	err = encoder.Encode(&c)
-	if err != nil {
-		return err
-	}
-
-	return nil
 }
