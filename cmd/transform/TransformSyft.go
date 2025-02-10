@@ -99,21 +99,16 @@ func main() {
 
 		coll := client.Database("sbom_metadata").Collection("sboms")
 
-		dbWriter := tasks.BufferedWriter[sbom.CyclonedxSbom]{
-			Buffer: 200,
-			DoWrite: func(t []*sbom.CyclonedxSbom) error {
+		buffer := 200
+		dbWriter := tasks.NewBufferedWriter(
+			func(t []*sbom.CyclonedxSbom) error {
 				_, err := coll.InsertMany(context.Background(), t)
 
 				return err
 			},
-		}
+			tasks.BufferedWriterConfig{Buffer: &buffer})
 
-		d := tasks.Dispatcher[string, sbom.CyclonedxSbom]{
-			NoWorker:        runtime.NumCPU(),
-			Worker:          worker,
-			ResultCollector: dbWriter,
-			Producer:        slices.Values(paths),
-		}
+		d := tasks.NewDispatcher(worker, slices.Values(paths), *dbWriter, tasks.DispatcherConfig{})
 
 		d.Dispatch()
 	}

@@ -3,80 +3,72 @@ package tasks
 import (
 	"fmt"
 	"iter"
+	"log/slog"
 	"math"
+	"os"
+	"runtime"
 	"sync"
 )
-
-type BufferedWriter[T any] struct {
-	DoWrite func(t []*T) error
-	Buffer  int
-}
-
-type Worker[T, E any] struct {
-	Do func(*T) (*E, error)
-}
 
 type Dispatcher[T, E any] struct {
 	NoWorker        int
 	Worker          Worker[T, E]
 	Producer        iter.Seq[T]
 	ResultCollector BufferedWriter[E]
+	Logger          slog.Logger
+	channelBuffer   int
 }
 
-// helper function for workers that should just pass through their
-// input to the output. This is useful to use the workerpool to read
-// data from one source and store it to another source (file to database)
-// without further modification
-func DoNothing[T any](t *T) (*T, error) {
-	return t, nil
+type DispatcherConfig struct {
+	NoWorker *int         // optional, defaults to runtime.NumCPU()
+	Logger   *slog.Logger // optional, defaults to error only log
 }
 
-func (w *BufferedWriter[T]) Run(in <-chan *T, errc chan error, wg *sync.WaitGroup) {
-	defer wg.Done()
+func NewDispatcher[T, E any](Worker Worker[T, E],
+	Producer iter.Seq[T],
+	ResultCollector BufferedWriter[E],
+	config DispatcherConfig) *Dispatcher[T, E] {
 
-	buffer := []*T{}
-
-	for i := range in {
-		if len(buffer) > w.Buffer {
-			err := w.DoWrite(buffer)
-			if err != nil {
-				errc <- err
-			}
-			buffer = []*T{}
-		}
-
-		buffer = append(buffer, i)
+	d := Dispatcher[T, E]{
+		Worker:          Worker,
+		Producer:        Producer,
+		ResultCollector: ResultCollector,
 	}
 
-	if len(buffer) > 0 {
-		err := w.DoWrite(buffer)
-		if err != nil {
-			errc <- err
-		}
+	// set number of workers
+	var noWorker int
+	if config.NoWorker != nil {
+		noWorker = *config.NoWorker
+	} else {
+		noWorker = runtime.NumCPU()
 	}
-}
+	d.NoWorker = noWorker
 
-func (w *Worker[T, E]) Run(in <-chan *T, out chan *E, errc chan error, wg *sync.WaitGroup) {
-	defer wg.Done()
-	for i := range in {
-		res, err := w.Do(i)
-		if err != nil {
-			errc <- err
-			continue
-		}
-		out <- res
+	// calculate channel buffer size
+	channelBuffer := d.ResultCollector.Buffer
+	if channelBuffer == math.MaxInt {
+		channelBuffer = 100 // limit channel buffer size
 	}
+	d.channelBuffer = channelBuffer / noWorker
+
+	// create logger
+	var logger *slog.Logger
+	if config.Logger != nil {
+		logger = config.Logger
+	} else {
+		slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{
+			Level: slog.LevelError,
+		}))
+	}
+	d.Logger = *logger
+
+	return &d
 }
 
 func (d *Dispatcher[T, E]) Dispatch() {
 
-	channelBuffer := d.ResultCollector.Buffer
-	if channelBuffer == math.MaxInt {
-		channelBuffer = 100
-	}
-
 	in := make(chan *T)
-	out := make(chan *E, channelBuffer/d.NoWorker)
+	out := make(chan *E, d.channelBuffer)
 	errc := make(chan error)
 
 	var processWg sync.WaitGroup

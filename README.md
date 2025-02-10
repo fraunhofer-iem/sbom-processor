@@ -19,3 +19,6 @@ MONGO_URI=mongodb://localhost:27017/dbname MONGO_USERNAME=USERNAME MONGO_PWD=PAS
 
 ### Export unique components
 This command identifies all unique component names for a given programming language from the SBOMs and exports them to a file for further processing (e.g., metadata lookup for every component through [maven index search](https://github.com/fraunhofer-iem/maven-index-search)). 
+```
+MONGO_URI=mongodb://localhost:27017/dbname MONGO_USERNAME=USERNAME MONGO_PWD=PASSWORD go run cmd/export/ExportUniqueComponents.go --out /tmp/sboms
+```
