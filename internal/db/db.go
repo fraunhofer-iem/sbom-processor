@@ -3,6 +3,7 @@ package db
 import (
 	"context"
 	"fmt"
+	"iter"
 
 	"go.mongodb.org/mongo-driver/v2/bson"
 	"go.mongodb.org/mongo-driver/v2/mongo"
@@ -10,6 +11,38 @@ import (
 
 type MongoIndex struct {
 	Name string `bson:"name"`
+}
+
+// type Seq[V any] func(yield func(V) bool)
+func MongodbIterator[T any](c *mongo.Cursor) iter.Seq[T] {
+	ctx := context.Background()
+	failed := 0
+	counter := 0
+
+	return func(yield func(T) bool) {
+		var res T
+		for c.Next(ctx) {
+			if err := c.Decode(&res); err != nil {
+				failed += 1
+				if failed%10 == 0 {
+					fmt.Printf("database response decode failed. Failed for %d elements\n", failed)
+				}
+				continue
+			}
+
+			counter += 1
+
+			if counter%100 == 0 {
+				fmt.Printf("processed %d elements\n", counter)
+			}
+
+			if !yield(res) {
+				fmt.Printf("processed all elements\n")
+				return
+			}
+
+		}
+	}
 }
 
 // CREATE INDEX IF NOT EXIST

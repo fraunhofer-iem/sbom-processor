@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"time"
 
 	"sbom-processor/internal/json"
@@ -76,9 +77,10 @@ func main() {
 			NoWorker:        runtime.NumCPU(),
 			Worker:          worker,
 			ResultCollector: fileWriter,
+			Producer:        slices.Values(paths),
 		}
 
-		d.Dispatch(paths)
+		d.Dispatch()
 	} else {
 
 		// DB CONNECTION
@@ -114,9 +116,10 @@ func main() {
 			NoWorker:        runtime.NumCPU(),
 			Worker:          worker,
 			ResultCollector: dbWriter,
+			Producer:        slices.Values(paths),
 		}
 
-		d.Dispatch(paths)
+		d.Dispatch()
 	}
 
 	fmt.Println("Finished main")

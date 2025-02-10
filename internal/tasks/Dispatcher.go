@@ -2,6 +2,7 @@ package tasks
 
 import (
 	"fmt"
+	"iter"
 	"sbom-processor/internal/json"
 	"sync"
 
@@ -25,7 +26,12 @@ type Worker[T, E any] struct {
 type Dispatcher[S Store, T, E any] struct {
 	NoWorker        int
 	Worker          Worker[T, E]
+	Producer        iter.Seq[T]
 	ResultCollector BufferedWriter[S, E]
+}
+
+func DoNothing[T any](t *T) (*T, error) {
+	return t, nil
 }
 
 func (w *BufferedWriter[S, T]) Run(in <-chan *T, errc chan error, wg *sync.WaitGroup) {
@@ -65,7 +71,7 @@ func (w *Worker[T, E]) Run(in <-chan *T, out chan *E, errc chan error, wg *sync.
 	}
 }
 
-func (d *Dispatcher[S, T, E]) Dispatch(inputs []T) {
+func (d *Dispatcher[S, T, E]) Dispatch() {
 
 	in := make(chan *T)
 	out := make(chan *E, d.ResultCollector.Buffer/d.NoWorker)
@@ -92,8 +98,8 @@ func (d *Dispatcher[S, T, E]) Dispatch(inputs []T) {
 	go d.ResultCollector.Run(out, errc, &writeWg)
 
 	// sent paths to collector worker
-	for _, p := range inputs {
-		in <- &p
+	for e := range d.Producer {
+		in <- &e
 	}
 	close(in)
 
