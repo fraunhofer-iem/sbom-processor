@@ -2,10 +2,17 @@ package main
 
 import (
 	"context"
+	"flag"
+	"fmt"
 	"log"
+	"math"
 	"os"
+	"path/filepath"
+	"runtime"
 	"sbom-processor/internal/db"
+	"sbom-processor/internal/json"
 	"sbom-processor/internal/tasks"
+	"sbom-processor/internal/validator"
 
 	"go.mongodb.org/mongo-driver/v2/bson"
 	"go.mongodb.org/mongo-driver/v2/mongo"
@@ -16,7 +23,12 @@ type UniqueNames struct {
 	Name string `bson:"_id" json:"_id"`
 }
 
+var out = flag.String("out", "", "File to write the SBOM to")
+
 func main() {
+
+	flag.Parse()
+	validator.ValidateOutPath(out)
 
 	// INPUT VALIDATION
 	uri := os.Getenv("MONGO_URI")
@@ -46,6 +58,7 @@ func main() {
 
 	sboms := client.Database("sbom_metadata").Collection("sboms")
 	// prep db query
+	// TODO: make component type configurable
 	pipeline := mongo.Pipeline{
 		{
 			{Key: "$match", Value: bson.D{{Key: "components.type", Value: "java-archive"}}},
@@ -73,4 +86,21 @@ func main() {
 		Do: tasks.DoNothing[UniqueNames],
 	}
 
+	writer := tasks.BufferedWriter[UniqueNames]{
+		Buffer: math.MaxInt,
+		DoWrite: func(t []*UniqueNames) error {
+			outPath := filepath.Join(*out, "uniqueComponentNames.json")
+			fmt.Printf("Print path %s\n", outPath)
+			return json.Store(outPath, t)
+		},
+	}
+
+	dispatcher := tasks.Dispatcher[UniqueNames, UniqueNames]{
+		Worker:          worker,
+		NoWorker:        runtime.NumCPU(),
+		ResultCollector: writer,
+		Producer:        it,
+	}
+
+	dispatcher.Dispatch()
 }

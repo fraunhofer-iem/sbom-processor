@@ -3,19 +3,12 @@ package tasks
 import (
 	"fmt"
 	"iter"
-	"sbom-processor/internal/json"
+	"math"
 	"sync"
-
-	"go.mongodb.org/mongo-driver/v2/mongo"
 )
 
-type Store interface {
-	json.JsonFileExporter | *mongo.Collection
-}
-
-type BufferedWriter[S Store, T any] struct {
-	DoWrite func(s S, t []*T) error
-	Store   S
+type BufferedWriter[T any] struct {
+	DoWrite func(t []*T) error
 	Buffer  int
 }
 
@@ -23,25 +16,29 @@ type Worker[T, E any] struct {
 	Do func(*T) (*E, error)
 }
 
-type Dispatcher[S Store, T, E any] struct {
+type Dispatcher[T, E any] struct {
 	NoWorker        int
 	Worker          Worker[T, E]
 	Producer        iter.Seq[T]
-	ResultCollector BufferedWriter[S, E]
+	ResultCollector BufferedWriter[E]
 }
 
+// helper function for workers that should just pass through their
+// input to the output. This is useful to use the workerpool to read
+// data from one source and store it to another source (file to database)
+// without further modification
 func DoNothing[T any](t *T) (*T, error) {
 	return t, nil
 }
 
-func (w *BufferedWriter[S, T]) Run(in <-chan *T, errc chan error, wg *sync.WaitGroup) {
+func (w *BufferedWriter[T]) Run(in <-chan *T, errc chan error, wg *sync.WaitGroup) {
 	defer wg.Done()
 
 	buffer := []*T{}
 
 	for i := range in {
 		if len(buffer) > w.Buffer {
-			err := w.DoWrite(w.Store, buffer)
+			err := w.DoWrite(buffer)
 			if err != nil {
 				errc <- err
 			}
@@ -52,7 +49,7 @@ func (w *BufferedWriter[S, T]) Run(in <-chan *T, errc chan error, wg *sync.WaitG
 	}
 
 	if len(buffer) > 0 {
-		err := w.DoWrite(w.Store, buffer)
+		err := w.DoWrite(buffer)
 		if err != nil {
 			errc <- err
 		}
@@ -71,10 +68,15 @@ func (w *Worker[T, E]) Run(in <-chan *T, out chan *E, errc chan error, wg *sync.
 	}
 }
 
-func (d *Dispatcher[S, T, E]) Dispatch() {
+func (d *Dispatcher[T, E]) Dispatch() {
+
+	channelBuffer := d.ResultCollector.Buffer
+	if channelBuffer == math.MaxInt {
+		channelBuffer = 100
+	}
 
 	in := make(chan *T)
-	out := make(chan *E, d.ResultCollector.Buffer/d.NoWorker)
+	out := make(chan *E, channelBuffer/d.NoWorker)
 	errc := make(chan error)
 
 	var processWg sync.WaitGroup

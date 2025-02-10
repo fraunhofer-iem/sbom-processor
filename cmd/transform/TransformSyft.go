@@ -65,15 +65,12 @@ func main() {
 	}
 
 	if *mode == "file" {
-		fileWriter := tasks.BufferedWriter[json.JsonFileExporter, sbom.CyclonedxSbom]{
-			Buffer: 1,
-			Store: json.JsonFileExporter{
-				Path: *out,
-			},
+		fileWriter := tasks.BufferedWriter[sbom.CyclonedxSbom]{
+			Buffer:  1,
 			DoWrite: writeToFile,
 		}
 
-		d := tasks.Dispatcher[json.JsonFileExporter, string, sbom.CyclonedxSbom]{
+		d := tasks.Dispatcher[string, sbom.CyclonedxSbom]{
 			NoWorker:        runtime.NumCPU(),
 			Worker:          worker,
 			ResultCollector: fileWriter,
@@ -102,17 +99,16 @@ func main() {
 
 		coll := client.Database("sbom_metadata").Collection("sboms")
 
-		dbWriter := tasks.BufferedWriter[*mongo.Collection, sbom.CyclonedxSbom]{
+		dbWriter := tasks.BufferedWriter[sbom.CyclonedxSbom]{
 			Buffer: 200,
-			Store:  coll,
-			DoWrite: func(s *mongo.Collection, t []*sbom.CyclonedxSbom) error {
-				_, err := s.InsertMany(context.Background(), t)
+			DoWrite: func(t []*sbom.CyclonedxSbom) error {
+				_, err := coll.InsertMany(context.Background(), t)
 
 				return err
 			},
 		}
 
-		d := tasks.Dispatcher[*mongo.Collection, string, sbom.CyclonedxSbom]{
+		d := tasks.Dispatcher[string, sbom.CyclonedxSbom]{
 			NoWorker:        runtime.NumCPU(),
 			Worker:          worker,
 			ResultCollector: dbWriter,
@@ -127,11 +123,11 @@ func main() {
 	fmt.Printf("Execution time: %s\n", elapsed)
 }
 
-func writeToFile(f json.JsonFileExporter, t []*sbom.CyclonedxSbom) error {
+func writeToFile(t []*sbom.CyclonedxSbom) error {
 	for _, s := range t {
 		ts := time.Now().Format("20060102150405") // Format: YYYYMMDDHHMMSS
-		outPath := filepath.Join(f.Path, s.Source.Id+"-"+ts+".json")
-		err := f.Store(outPath, s)
+		outPath := filepath.Join(*out, s.Source.Id+"-"+ts+".json")
+		err := json.Store(outPath, s)
 		if err != nil {
 			fmt.Printf("err during file storage %s\n", err)
 		}
