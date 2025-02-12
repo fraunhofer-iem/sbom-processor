@@ -3,8 +3,8 @@ package main
 import (
 	"context"
 	"flag"
-	"fmt"
 	"log"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -21,14 +21,36 @@ import (
 )
 
 var mode = flag.String("mode", "file", "file or db. defines whether to store results in db or file.")
+var dbName = flag.String("db", "sbom_metadata", "database name to connect to")
+var collectionName = flag.String("collection", "sboms", "collection name for SBOMs")
 var in = flag.String("in", "", "Path to SBOM")
 var out = flag.String("out", "", "File to write the SBOM to")
+var logLevel = flag.Int("logLevel", 0, "Can be 0 for INFO, -4 for DEBUG, 4 for WARN, or 8 for ERROR. Defaults to INFO.")
 
 func main() {
 
 	start := time.Now()
 	// get input path and check for correctness
 	flag.Parse()
+
+	var lvl slog.Level
+
+	switch {
+	case *logLevel < int(slog.LevelInfo):
+		lvl = slog.LevelDebug
+	case *logLevel < int(slog.LevelWarn):
+		lvl = slog.LevelInfo
+	case *logLevel < int(slog.LevelError):
+		lvl = slog.LevelWarn
+	default:
+		lvl = slog.LevelError
+	}
+
+	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{
+		Level: lvl,
+	}))
+
+	slog.SetDefault(logger)
 
 	if *mode != "file" && *mode != "db" {
 		panic("Unkown operation mode, choose file or db")
@@ -60,24 +82,15 @@ func main() {
 		log.Fatal(err)
 	}
 
-	worker := tasks.Worker[string, sbom.CyclonedxSbom]{
-		Do: transformSbom,
-	}
+	logger.Info("Starting syft to cyclonedx transformation", "path", *in, "mode", *mode)
+
+	var writer *tasks.BufferedWriter[sbom.CyclonedxSbom]
 
 	if *mode == "file" {
-		fileWriter := tasks.BufferedWriter[sbom.CyclonedxSbom]{
-			Buffer:  1,
-			DoWrite: writeToFile,
-		}
-
-		d := tasks.Dispatcher[string, sbom.CyclonedxSbom]{
-			NoWorker:        runtime.NumCPU(),
-			Worker:          worker,
-			ResultCollector: fileWriter,
-			Producer:        slices.Values(paths),
-		}
-
-		d.Dispatch()
+		buffer := 100
+		writer = tasks.NewBufferedWriter(
+			writeToFile,
+			tasks.BufferedWriterConfig{Buffer: &buffer})
 	} else {
 
 		// DB CONNECTION
@@ -97,38 +110,46 @@ func main() {
 			}
 		}()
 
-		coll := client.Database("sbom_metadata").Collection("sboms")
+		coll := client.Database(*dbName).Collection(*collectionName)
 
 		buffer := 200
-		dbWriter := tasks.NewBufferedWriter(
+		writer = tasks.NewBufferedWriter(
 			func(t []*sbom.CyclonedxSbom) error {
 				_, err := coll.InsertMany(context.Background(), t)
 
 				return err
 			},
 			tasks.BufferedWriterConfig{Buffer: &buffer})
-
-		d := tasks.NewDispatcher(worker, slices.Values(paths), *dbWriter, tasks.DispatcherConfig{})
-
-		d.Dispatch()
 	}
 
-	fmt.Println("Finished main")
+	worker := tasks.Worker[string, sbom.CyclonedxSbom]{
+		Do: transformSbom,
+	}
+	noWorker := runtime.NumCPU()
+
+	d := tasks.NewDispatcher(worker, slices.Values(paths), *writer,
+		tasks.DispatcherConfig{NoWorker: &noWorker})
+
+	logger.Debug("Initialized dispatcher", "dispatcher", d)
+
+	d.Dispatch()
+
 	elapsed := time.Since(start)
-	fmt.Printf("Execution time: %s\n", elapsed)
+	logger.Info("Finished syft transform", "time elapsed", elapsed)
 }
 
 func writeToFile(t []*sbom.CyclonedxSbom) error {
+	var err error
 	for _, s := range t {
 		ts := time.Now().Format("20060102150405") // Format: YYYYMMDDHHMMSS
 		outPath := filepath.Join(*out, s.Source.Id+"-"+ts+".json")
-		err := json.Store(outPath, s)
+		err = json.Store(outPath, s)
 		if err != nil {
-			fmt.Printf("err during file storage %s\n", err)
+			slog.Default().Error("err during file storage", "file", outPath, "error", err)
 		}
 	}
 
-	return nil
+	return err
 }
 
 func transformSbom(p *string) (*sbom.CyclonedxSbom, error) {

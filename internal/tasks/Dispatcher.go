@@ -1,11 +1,9 @@
 package tasks
 
 import (
-	"fmt"
 	"iter"
 	"log/slog"
 	"math"
-	"os"
 	"runtime"
 	"sync"
 )
@@ -15,13 +13,12 @@ type Dispatcher[T, E any] struct {
 	Worker          Worker[T, E]
 	Producer        iter.Seq[T]
 	ResultCollector BufferedWriter[E]
-	Logger          slog.Logger
+	logger          slog.Logger
 	channelBuffer   int
 }
 
 type DispatcherConfig struct {
-	NoWorker *int         // optional, defaults to runtime.NumCPU()
-	Logger   *slog.Logger // optional, defaults to error only log
+	NoWorker *int // optional, defaults to runtime.NumCPU()
 }
 
 func NewDispatcher[T, E any](Worker Worker[T, E],
@@ -38,7 +35,11 @@ func NewDispatcher[T, E any](Worker Worker[T, E],
 	// set number of workers
 	var noWorker int
 	if config.NoWorker != nil {
-		noWorker = *config.NoWorker
+		if *config.NoWorker <= 0 {
+			noWorker = runtime.NumCPU()
+		} else {
+			noWorker = *config.NoWorker
+		}
 	} else {
 		noWorker = runtime.NumCPU()
 	}
@@ -51,16 +52,7 @@ func NewDispatcher[T, E any](Worker Worker[T, E],
 	}
 	d.channelBuffer = channelBuffer / noWorker
 
-	// create logger
-	var logger *slog.Logger
-	if config.Logger != nil {
-		logger = config.Logger
-	} else {
-		slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{
-			Level: slog.LevelError,
-		}))
-	}
-	d.Logger = *logger
+	d.logger = *slog.Default()
 
 	return &d
 }
@@ -79,11 +71,12 @@ func (d *Dispatcher[T, E]) Dispatch() {
 		processWg.Add(1)
 		go d.Worker.Run(in, out, errc, &processWg)
 	}
+	d.logger.Debug("Started workers", "number workers", d.NoWorker)
 
 	// setup error logging
 	go func() {
 		for err := range errc {
-			fmt.Printf("error occured %s\n", err)
+			d.logger.Error("an error occured in dispatcher", "error", err)
 		}
 	}()
 
@@ -96,10 +89,13 @@ func (d *Dispatcher[T, E]) Dispatch() {
 		in <- &e
 	}
 	close(in)
+	d.logger.Debug("Producer finished")
 
 	processWg.Wait()
 	close(out)
-	writeWg.Wait()
+	d.logger.Debug("Worker finished")
 
+	writeWg.Wait()
 	close(errc)
+	d.logger.Debug("Writer finished")
 }

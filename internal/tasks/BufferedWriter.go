@@ -1,6 +1,9 @@
 package tasks
 
-import "sync"
+import (
+	"log/slog"
+	"sync"
+)
 
 type BufferedWriter[T any] struct {
 	DoWrite func(t []*T) error
@@ -38,6 +41,7 @@ func (w *BufferedWriter[T]) Run(in <-chan *T, errc chan error, wg *sync.WaitGrou
 			if err != nil {
 				errc <- err
 			}
+			slog.Default().Info("Wrote buffer to target")
 			buffer = []*T{}
 		}
 
@@ -49,5 +53,6 @@ func (w *BufferedWriter[T]) Run(in <-chan *T, errc chan error, wg *sync.WaitGrou
 		if err != nil {
 			errc <- err
 		}
+		slog.Default().Info("Wrote remaining buffer to target")
 	}
 }

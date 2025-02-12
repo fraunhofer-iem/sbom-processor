@@ -3,6 +3,8 @@ This repository contains utility functions to process large amounts of SBOM rela
 
 ## Usage
 
+
+
 ### Transform Syft to CycloneDx
 This command iterates through all json files in the given in directory and tries to parse them to a syft result struct. These structs are then transformed to cyclonedx SBOMs and stored in a file or a mongodb database depending on the chosen mode.
 #### File to file transformation
@@ -12,6 +14,7 @@ go run cmd/transform/TransformSyft.go --mode file --in /path/to/your/sboms --out
 
 #### File to database transformation
 Database connection parameters are read from environment variables. How you set those is up to you. In the following example we temporarily set them in the command executing the go program.
+This command takes optional `db` and `collection` parameters to define the database name and collection name to interact upon. They default to `sbom_metadata` and `sboms`.
 
 ```
 MONGO_URI=mongodb://localhost:27017/dbname MONGO_USERNAME=USERNAME MONGO_PWD=PASSWORD go run cmd/transform/TransformSyft.go --mode db --in /path/to/your/sbom
