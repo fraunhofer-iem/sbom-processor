@@ -14,9 +14,15 @@ type SyftSbom struct {
 }
 
 type Source struct {
-	Id      string `json:"id"`
-	Name    string `json:"name"`
-	Version string `json:"version"` // in our current example a SHA256
+	Id       string   `json:"id"`
+	Name     string   `json:"name"`
+	Version  string   `json:"version"` // in our current example a SHA256
+	Metadata Metadata `json:"metadata"`
+}
+
+type Metadata struct {
+	Labels  map[string]string `json:"labels"`
+	ImageId string            `json:"imageID"`
 }
 
 type Distro struct {
@@ -38,8 +44,8 @@ type Component struct {
 	Version  string `json:"version"`
 }
 
-func ReadSyft(p string) (*SyftSbom, error) {
-	file, err := os.Open(p)
+func ReadSyft(p *string) (*SyftSbom, error) {
+	file, err := os.Open(*p)
 	if err != nil {
 		return nil, err
 	}

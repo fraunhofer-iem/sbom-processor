@@ -2,3 +2,5 @@
 example
 out
 js
+.env
+*.log

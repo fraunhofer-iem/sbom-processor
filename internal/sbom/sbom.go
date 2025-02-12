@@ -1,12 +1,16 @@
 package sbom
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/url"
-	"os"
+	"sbom-processor/internal/semver"
 	"strings"
+
+	"go.mongodb.org/mongo-driver/v2/bson"
+	"go.mongodb.org/mongo-driver/v2/mongo"
 )
 
 type Target struct {
@@ -38,35 +42,67 @@ type Version struct {
 const deb string = "deb"
 const debBasePath string = "https://snapshot.debian.org/mr/package/"
 
-func ReadCyclonedx(p string) (*CyclonedxSbom, error) {
-	file, err := os.Open(p)
+type CyclonedxReader struct {
+	FileReader CycloneDxFileReader
+	DbReader   CycloneDxDbReader
+}
+
+type CycloneDxFileReader struct{}
+type CycloneDxDbReader struct {
+	Sboms mongo.Collection
+}
+
+type CycloneDxDbStore struct {
+	Sboms mongo.Collection
+}
+
+func (c *Component) IsInCache(cache, blackList *mongo.Collection) bool {
+	// check if versions are in db before continue
+	err := blackList.FindOne(context.TODO(), bson.D{{Key: "id", Value: c.Id}}).Err()
+	if err == nil || err != mongo.ErrNoDocuments {
+		fmt.Printf("Versions for %+v in blacklist db\n", c)
+		return true
+	}
+
+	filter := bson.D{{Key: "component_id", Value: c.Id}}
+	err = cache.FindOne(context.TODO(), filter).Err()
+	if err == nil || err != mongo.ErrNoDocuments {
+		fmt.Printf("Versions for %+v already in db\n", c)
+		return true
+	}
+
+	return false
+}
+
+func (c *Component) GetVersions() (*semver.ComponentVersions, error) {
+	var raw []string
+	var err error
+
+	switch c.Type {
+	case deb:
+		raw, err = getDebVersions(debBasePath, c.Name)
+	default:
+		raw = nil
+		err = fmt.Errorf("unkown component type")
+	}
+
 	if err != nil {
 		return nil, err
 	}
 
-	defer file.Close()
-
-	decoder := json.NewDecoder(file)
-	var sbom CyclonedxSbom
-
-	if err := decoder.Decode(&sbom); err != nil {
-		return nil, err
+	compVer := make([]semver.ComponentVersion, len(raw))
+	for i, v := range raw {
+		compVer[i] = semver.ComponentVersion{
+			Version:     v,
+			ReleaseDate: "",
+		}
+	}
+	compVers := semver.ComponentVersions{
+		ComponentId: c.Id,
+		Versions:    compVer,
 	}
 
-	if sbom.Components == nil ||
-		sbom.Dependencies == nil {
-		return nil, fmt.Errorf("incomplete sbom")
-	}
-
-	return &sbom, nil
-}
-
-func (c *Component) GetVersions() ([]string, error) {
-	if c.Type == deb {
-		return getDebVersions(debBasePath, c.Name)
-	}
-
-	return nil, fmt.Errorf("unkown component type for %+v", *c)
+	return &compVers, nil
 }
 
 func getDebVersions(basePath string, n string) ([]string, error) {
@@ -107,22 +143,4 @@ func getDebVersions(basePath string, n string) ([]string, error) {
 	}
 
 	return versions, nil
-}
-
-func (c *CyclonedxSbom) Store(out string) error {
-
-	outFile, err := os.Create(out)
-	if err != nil {
-		return err
-	}
-
-	defer outFile.Close()
-
-	encoder := json.NewEncoder(outFile)
-	err = encoder.Encode(&c)
-	if err != nil {
-		return err
-	}
-
-	return nil
 }

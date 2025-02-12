@@ -3,6 +3,8 @@ package sbom
 import (
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"testing"
 )
 
@@ -40,4 +42,32 @@ func TestGetDebVersions(t *testing.T) {
 		}
 		contained = false
 	}
+}
+
+func TestCyclonedxCollect(t *testing.T) {
+
+	dir := t.TempDir()
+	p := filepath.Join(dir, "cyclonedx.json")
+
+	f, err := os.Create(p)
+	if err != nil {
+		t.Fatalf("unable to create test file %s", err.Error())
+	}
+
+	defer f.Close()
+
+	f.WriteString("{\"components\" : [{\"name\": \"name\", \"type\":\"type\", \"id\": \"id\", \"language\":\"language\", \"version\":\"version\"}], \"dependencies\": []}")
+
+	reader := CycloneDxFileReader{}
+	var s CyclonedxSbom
+
+	err = reader.Collect(p, &s)
+	if err != nil {
+		t.Fatalf("collect failed with %s", err)
+	}
+
+	if len(s.Components) != 1 {
+		t.Fatalf("Incorrect component length")
+	}
+
 }
