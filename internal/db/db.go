@@ -2,8 +2,8 @@ package db
 
 import (
 	"context"
-	"fmt"
 	"iter"
+	"log/slog"
 
 	"go.mongodb.org/mongo-driver/v2/bson"
 	"go.mongodb.org/mongo-driver/v2/mongo"
@@ -13,7 +13,8 @@ type MongoIndex struct {
 	Name string `bson:"name"`
 }
 
-// type Seq[V any] func(yield func(V) bool)
+var logger = slog.Default()
+
 func MongodbIterator[T any](c *mongo.Cursor) iter.Seq[T] {
 	ctx := context.Background()
 	failed := 0
@@ -24,23 +25,19 @@ func MongodbIterator[T any](c *mongo.Cursor) iter.Seq[T] {
 		for c.Next(ctx) {
 			if err := c.Decode(&res); err != nil {
 				failed += 1
-				if failed%10 == 0 {
-					fmt.Printf("database response decode failed. Failed for %d elements\n", failed)
-				}
 				continue
 			}
 
 			counter += 1
 
 			if counter%100 == 0 {
-				fmt.Printf("processed %d elements\n", counter)
+				logger.Info("processed elements", "processed", counter, "failed", failed)
 			}
 
 			if !yield(res) {
-				fmt.Printf("processed all elements\n")
+				logger.Info("processed all elements", "processed", counter, "failed", failed)
 				return
 			}
-
 		}
 	}
 }
@@ -49,6 +46,8 @@ func MongodbIterator[T any](c *mongo.Cursor) iter.Seq[T] {
 func CreateIdx(coll *mongo.Collection, idxKey string) error {
 
 	ctx := context.Background()
+
+	logger.Debug("Create idx called", "idx name", idxKey)
 
 	// CHECK IF IDX EXISTS
 	idx, err := coll.Indexes().List(context.TODO())
@@ -60,23 +59,18 @@ func CreateIdx(coll *mongo.Collection, idxKey string) error {
 
 	idxExists := false
 
-	for {
+	for idx.Next(ctx) {
 		var curr MongoIndex
 		err := idx.Decode(&curr)
 
-		if err == nil {
-			if curr.Name == idxKey+"_1" {
-				idxExists = true
-				break
-			}
-		}
-
-		if !idx.Next(ctx) {
+		if err == nil && curr.Name == idxKey+"_1" {
+			idxExists = true
 			break
 		}
 	}
 
 	if idxExists {
+		logger.Debug("Index already exists", "idx name", idxKey)
 		return nil
 	}
 
@@ -89,6 +83,6 @@ func CreateIdx(coll *mongo.Collection, idxKey string) error {
 		return err
 	}
 
-	fmt.Println("Name of created index : " + name)
+	logger.Debug("Index successfully created", "idx name", name)
 	return nil
 }

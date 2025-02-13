@@ -91,7 +91,7 @@ func main() {
 		DoWrite: func(t []*UniqueNames) error {
 			outPath := filepath.Join(*out, "uniqueComponentNames.json")
 			fmt.Printf("Print path %s\n", outPath)
-			return json.Store(outPath, t)
+			return json.StoreFile(outPath, t)
 		},
 	}
 

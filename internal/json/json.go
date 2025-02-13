@@ -1,6 +1,7 @@
 package json
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -10,7 +11,6 @@ import (
 // doesn't travers sub directories.
 // if no files are found returns nil
 func CollectJsonFiles(p string) ([]string, error) {
-
 	f, err := os.Stat(p)
 	if err != nil {
 		return nil, err
@@ -46,4 +46,21 @@ func CollectJsonFiles(p string) ([]string, error) {
 	}
 
 	return paths, nil
+}
+
+func StoreFile(path string, element any) error {
+	outFile, err := os.Create(path)
+	if err != nil {
+		return err
+	}
+
+	defer outFile.Close()
+
+	encoder := json.NewEncoder(outFile)
+	err = encoder.Encode(&element)
+	if err != nil {
+		return err
+	}
+
+	return nil
 }

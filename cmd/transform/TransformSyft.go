@@ -143,7 +143,7 @@ func writeToFile(t []*sbom.CyclonedxSbom) error {
 	for _, s := range t {
 		ts := time.Now().Format("20060102150405") // Format: YYYYMMDDHHMMSS
 		outPath := filepath.Join(*out, s.Source.Id+"-"+ts+".json")
-		err = json.Store(outPath, s)
+		err = json.StoreFile(outPath, s)
 		if err != nil {
 			slog.Default().Error("err during file storage", "file", outPath, "error", err)
 		}
