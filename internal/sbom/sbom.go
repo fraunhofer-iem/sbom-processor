@@ -42,20 +42,6 @@ type Version struct {
 const deb string = "deb"
 const debBasePath string = "https://snapshot.debian.org/mr/package/"
 
-type CyclonedxReader struct {
-	FileReader CycloneDxFileReader
-	DbReader   CycloneDxDbReader
-}
-
-type CycloneDxFileReader struct{}
-type CycloneDxDbReader struct {
-	Sboms mongo.Collection
-}
-
-type CycloneDxDbStore struct {
-	Sboms mongo.Collection
-}
-
 func (c *Component) IsInCache(cache, blackList *mongo.Collection) bool {
 	// check if versions are in db before continue
 	err := blackList.FindOne(context.TODO(), bson.D{{Key: "id", Value: c.Id}}).Err()

@@ -18,7 +18,7 @@ func TestReadSyftValidEmpty(t *testing.T) {
 	defer f.Close()
 
 	f.WriteString("{\"artifacts\" : [], \"artifactRelationships\": []}")
-	s, err := ReadSyft(p)
+	s, err := ReadSyft(&p)
 
 	if err != nil {
 		t.Fatalf("no error expected for valid Json with empty artifacts")
@@ -40,7 +40,7 @@ func TestReadSyftValid(t *testing.T) {
 	defer f.Close()
 
 	f.WriteString("{\"artifacts\" : [{\"name\": \"test\", \"id\": \"myId\", \"version\": \"1.0.1\"}], \"artifactRelationships\": [{\"parent\": \"parent\", \"child\": \"child\", \"type\": \"type\"}]}")
-	s, err := ReadSyft(p)
+	s, err := ReadSyft(&p)
 
 	if err != nil {
 		t.Fatalf("no error expected for valid Json with empty artifacts")
@@ -81,7 +81,7 @@ func TestReadSyftValidJsonMissingKey(t *testing.T) {
 
 	defer f.Close()
 	f.WriteString("{\"artifacts\" : []}")
-	s, err := ReadSyft(p)
+	s, err := ReadSyft(&p)
 
 	if err == nil {
 		t.Fatalf("error expected for valid Json with missing mandatory key")
@@ -102,7 +102,7 @@ func TestReadSyftInvalidJson(t *testing.T) {
 
 	defer f.Close()
 	f.WriteString("{\"artifacts : []")
-	s, err := ReadSyft(p)
+	s, err := ReadSyft(&p)
 
 	if err == nil {
 		t.Fatalf("error expected for invalid Json")
@@ -114,7 +114,8 @@ func TestReadSyftInvalidJson(t *testing.T) {
 
 func TestReadSyftNoFile(t *testing.T) {
 
-	s, err := ReadSyft("I don't exist")
+	p := "I don't exist"
+	s, err := ReadSyft(&p)
 
 	if err == nil {
 		t.Fatalf("error expected for not existing path")

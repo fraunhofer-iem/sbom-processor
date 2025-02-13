@@ -24,6 +24,7 @@ type UniqueNames struct {
 }
 
 var out = flag.String("out", "", "File to write the SBOM to")
+var componentType = flag.String("componentType", "java-archive", "Component type to filter on")
 
 func main() {
 
@@ -61,12 +62,12 @@ func main() {
 	// TODO: make component type configurable
 	pipeline := mongo.Pipeline{
 		{
-			{Key: "$match", Value: bson.D{{Key: "components.type", Value: "java-archive"}}},
+			{Key: "$match", Value: bson.D{{Key: "components.type", Value: *componentType}}},
 		},
 		{
 			{Key: "$unwind", Value: "$components"},
 		},
-		{{Key: "$match", Value: bson.D{{Key: "components.type", Value: "java-archive"}}}},
+		{{Key: "$match", Value: bson.D{{Key: "components.type", Value: *componentType}}}},
 		{
 			{Key: "$group", Value: bson.D{
 				{Key: "_id", Value: "$components.name"},

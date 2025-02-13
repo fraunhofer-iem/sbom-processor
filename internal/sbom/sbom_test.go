@@ -58,10 +58,7 @@ func TestCyclonedxCollect(t *testing.T) {
 
 	f.WriteString("{\"components\" : [{\"name\": \"name\", \"type\":\"type\", \"id\": \"id\", \"language\":\"language\", \"version\":\"version\"}], \"dependencies\": []}")
 
-	reader := CycloneDxFileReader{}
-	var s CyclonedxSbom
-
-	err = reader.Collect(p, &s)
+	s, err := ReadCyclonedx(p)
 	if err != nil {
 		t.Fatalf("collect failed with %s", err)
 	}
