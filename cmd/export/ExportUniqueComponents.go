@@ -11,8 +11,10 @@ import (
 	"runtime"
 	"sbom-processor/internal/db"
 	"sbom-processor/internal/json"
+	"sbom-processor/internal/logging"
 	"sbom-processor/internal/tasks"
 	"sbom-processor/internal/validator"
+	"time"
 
 	"go.mongodb.org/mongo-driver/v2/bson"
 	"go.mongodb.org/mongo-driver/v2/mongo"
@@ -25,10 +27,17 @@ type UniqueNames struct {
 
 var out = flag.String("out", "", "File to write the SBOM to")
 var componentType = flag.String("componentType", "java-archive", "Component type to filter on")
+var logLevel = flag.Int("logLevel", 0, "Can be 0 for INFO, -4 for DEBUG, 4 for WARN, or 8 for ERROR. Defaults to INFO.")
+var dbName = flag.String("db", "sbom_metadata", "database name to connect to")
+var collectionName = flag.String("collection", "sboms", "collection name for SBOMs")
 
 func main() {
 
+	start := time.Now()
 	flag.Parse()
+
+	logger := logging.SetUpLogging(*logLevel)
+
 	validator.ValidateOutPath(out)
 
 	// INPUT VALIDATION
@@ -57,9 +66,11 @@ func main() {
 		}
 	}()
 
-	sboms := client.Database("sbom_metadata").Collection("sboms")
+	sboms := client.Database(*dbName).Collection(*collectionName)
+
+	logger.Info("Export unique components called", "db", *dbName, "collection", *collectionName, "componentType", *componentType)
+
 	// prep db query
-	// TODO: make component type configurable
 	pipeline := mongo.Pipeline{
 		{
 			{Key: "$match", Value: bson.D{{Key: "components.type", Value: *componentType}}},
@@ -104,4 +115,7 @@ func main() {
 	}
 
 	dispatcher.Dispatch()
+
+	elapsed := time.Since(start)
+	logger.Info("Finished syft transform", "time elapsed", elapsed)
 }

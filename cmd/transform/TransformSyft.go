@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"sbom-processor/internal/json"
+	"sbom-processor/internal/logging"
 	"sbom-processor/internal/sbom"
 	"sbom-processor/internal/tasks"
 	"sbom-processor/internal/validator"
@@ -33,24 +34,7 @@ func main() {
 	// get input path and check for correctness
 	flag.Parse()
 
-	var lvl slog.Level
-
-	switch {
-	case *logLevel < int(slog.LevelInfo):
-		lvl = slog.LevelDebug
-	case *logLevel < int(slog.LevelWarn):
-		lvl = slog.LevelInfo
-	case *logLevel < int(slog.LevelError):
-		lvl = slog.LevelWarn
-	default:
-		lvl = slog.LevelError
-	}
-
-	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{
-		Level: lvl,
-	}))
-
-	slog.SetDefault(logger)
+	logger := logging.SetUpLogging(*logLevel)
 
 	if *mode != "file" && *mode != "db" {
 		panic("Unkown operation mode, choose file or db")
