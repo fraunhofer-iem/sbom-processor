@@ -8,36 +8,34 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
-	"sbom-processor/internal/db"
 	"sbom-processor/internal/json"
 	"sbom-processor/internal/logging"
 	"sbom-processor/internal/tasks"
 	"sbom-processor/internal/validator"
 	"time"
 
-	"go.mongodb.org/mongo-driver/v2/bson"
 	"go.mongodb.org/mongo-driver/v2/mongo"
 	"go.mongodb.org/mongo-driver/v2/mongo/options"
 )
 
-type UniqueNames struct {
-	Name string `bson:"_id" json:"_id"`
-}
-
-var out = flag.String("out", "", "File to write the SBOM to")
-var componentType = flag.String("componentType", "java-archive", "Component type to filter on")
+var in = flag.String("in", "", "path to input file containing mvn metadata")
 var logLevel = flag.Int("logLevel", 0, "Can be 0 for INFO, -4 for DEBUG, 4 for WARN, or 8 for ERROR. Defaults to INFO.")
 var dbName = flag.String("db", "sbom_metadata", "database name to connect to")
-var collectionName = flag.String("collection", "sboms", "collection name for SBOMs")
+var collectionName = flag.String("collection", "mvn_metadata", "collection name for SBOMs")
+
+type MvnIdentifier struct {
+	// e.g. "u":"org.apache.pdfbox|pdfbox-io|3.0.0-beta1|NA|jar"
+	Idenfitier string `bson:"u" json:"u"`
+}
 
 func main() {
 
 	start := time.Now()
+
 	flag.Parse()
 
+	validator.ValidateInPath(in)
 	logger := logging.SetUpLogging(*logLevel)
-
-	validator.ValidateOutPath(out)
 
 	// INPUT VALIDATION
 	uri := os.Getenv("MONGO_URI")
@@ -67,33 +65,9 @@ func main() {
 
 	sboms := client.Database(*dbName).Collection(*collectionName)
 
-	logger.Info("Export unique components called", "db", *dbName, "collection", *collectionName, "componentType", *componentType)
+	logger.Info("Import unique components called", "db", *dbName, "collection", *collectionName, "componentType", *componentType)
 
-	// prep db query
-	pipeline := mongo.Pipeline{
-		{
-			{Key: "$match", Value: bson.D{{Key: "components.type", Value: *componentType}}},
-		},
-		{
-			{Key: "$unwind", Value: "$components"},
-		},
-		{{Key: "$match", Value: bson.D{{Key: "components.type", Value: *componentType}}}},
-		{
-			{Key: "$group", Value: bson.D{
-				{Key: "_id", Value: "$components.name"},
-			}},
-		},
-	}
-
-	cursor, err := sboms.Aggregate(context.TODO(), pipeline, options.Aggregate().SetBatchSize(1000))
-	if err != nil {
-		panic(err)
-	}
-	defer cursor.Close(context.TODO())
-
-	it := db.MongodbIterator[UniqueNames](cursor)
-
-	worker := tasks.Worker[UniqueNames, UniqueNames]{
+	worker := tasks.Worker[MvnIdentifier]{
 		Do: tasks.DoNothing[UniqueNames],
 	}
 
@@ -116,5 +90,5 @@ func main() {
 	dispatcher.Dispatch()
 
 	elapsed := time.Since(start)
-	logger.Info("Finished syft transform", "time elapsed", elapsed)
+	logger.Info("Execution finished", "runtime", elapsed)
 }

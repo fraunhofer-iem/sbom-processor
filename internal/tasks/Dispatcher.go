@@ -6,6 +6,7 @@ import (
 	"math"
 	"runtime"
 	"sync"
+	"time"
 )
 
 type Dispatcher[T, E any] struct {
@@ -15,10 +16,12 @@ type Dispatcher[T, E any] struct {
 	ResultCollector BufferedWriter[E]
 	logger          slog.Logger
 	channelBuffer   int
+	rateLimit       time.Duration
 }
 
 type DispatcherConfig struct {
-	NoWorker *int // optional, defaults to runtime.NumCPU()
+	NoWorker  *int           // optional, defaults to runtime.NumCPU()
+	RateLimit *time.Duration // optional, defaults to 0 meaning no rate limit is applied
 }
 
 func NewDispatcher[T, E any](Worker Worker[T, E],
@@ -44,6 +47,12 @@ func NewDispatcher[T, E any](Worker Worker[T, E],
 		noWorker = runtime.NumCPU()
 	}
 	d.NoWorker = noWorker
+
+	if config.RateLimit != nil && *config.RateLimit > 0 {
+		d.rateLimit = *config.RateLimit
+	} else {
+		d.rateLimit = 0
+	}
 
 	// calculate channel buffer size
 	channelBuffer := d.ResultCollector.Buffer
@@ -84,10 +93,19 @@ func (d *Dispatcher[T, E]) Dispatch() {
 	writeWg.Add(1)
 	go d.ResultCollector.Run(out, errc, &writeWg)
 
-	// sent paths to collector worker
-	for e := range d.Producer {
-		in <- &e
+	// start producer
+	if d.rateLimit > 0 {
+		throttle := time.Tick(d.rateLimit)
+		for e := range d.Producer {
+			<-throttle
+			in <- &e
+		}
+	} else {
+		for e := range d.Producer {
+			in <- &e
+		}
 	}
+
 	close(in)
 	d.logger.Debug("Producer finished")
 
