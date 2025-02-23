@@ -14,9 +14,10 @@ type Dispatcher[T, E any] struct {
 	Worker          Worker[T, E]
 	Producer        iter.Seq[T]
 	ResultCollector BufferedWriter[E]
-	logger          slog.Logger
-	channelBuffer   int
-	rateLimit       time.Duration
+
+	logger        *slog.Logger
+	channelBuffer int
+	rateLimit     time.Duration
 }
 
 type DispatcherConfig struct {
@@ -61,7 +62,7 @@ func NewDispatcher[T, E any](Worker Worker[T, E],
 	}
 	d.channelBuffer = channelBuffer / noWorker
 
-	d.logger = *slog.Default()
+	d.logger = slog.Default()
 
 	return &d
 }

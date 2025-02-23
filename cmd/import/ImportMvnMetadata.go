@@ -2,16 +2,18 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"flag"
+	"fmt"
 	"log"
 	"math"
 	"os"
-	"path/filepath"
-	"runtime"
-	"sbom-processor/internal/json"
+	"sbom-processor/internal/deps"
 	"sbom-processor/internal/logging"
 	"sbom-processor/internal/tasks"
 	"sbom-processor/internal/validator"
+	"slices"
+	"strings"
 	"time"
 
 	"go.mongodb.org/mongo-driver/v2/mongo"
@@ -21,7 +23,7 @@ import (
 var in = flag.String("in", "", "path to input file containing mvn metadata")
 var logLevel = flag.Int("logLevel", 0, "Can be 0 for INFO, -4 for DEBUG, 4 for WARN, or 8 for ERROR. Defaults to INFO.")
 var dbName = flag.String("db", "sbom_metadata", "database name to connect to")
-var collectionName = flag.String("collection", "mvn_metadata", "collection name for SBOMs")
+var collectionName = flag.String("collection", "deps_metadata", "collection name for SBOMs")
 
 type MvnIdentifier struct {
 	// e.g. "u":"org.apache.pdfbox|pdfbox-io|3.0.0-beta1|NA|jar"
@@ -63,29 +65,59 @@ func main() {
 		}
 	}()
 
-	sboms := client.Database(*dbName).Collection(*collectionName)
+	coll := client.Database(*dbName).Collection(*collectionName)
 
-	logger.Info("Import unique components called", "db", *dbName, "collection", *collectionName, "componentType", *componentType)
+	logger.Info("Import unique components called", "db", *dbName, "collection", *collectionName)
 
-	worker := tasks.Worker[MvnIdentifier]{
-		Do: tasks.DoNothing[UniqueNames],
+	file, err := os.Open(*in)
+	if err != nil {
+		panic(err)
 	}
 
-	writer := tasks.BufferedWriter[UniqueNames]{
-		Buffer: math.MaxInt,
-		DoWrite: func(t []*UniqueNames) error {
-			outPath := filepath.Join(*out, "uniqueComponentNames.json")
-			logger.Info("write output called", "out path", outPath)
-			return json.StoreFile(outPath, t)
+	defer file.Close()
+
+	decoder := json.NewDecoder(file)
+	var mvn []MvnIdentifier
+
+	if err := decoder.Decode(&mvn); err != nil {
+		panic(err)
+	}
+
+	worker := tasks.Worker[MvnIdentifier, deps.Deps]{
+		Do: func(t *MvnIdentifier) (*deps.Deps, error) {
+			// first tranform u to CacheRequest
+			// the format is system dependent
+			split := strings.Split(t.Idenfitier, "|")
+			if len(split) < 2 {
+				return nil, fmt.Errorf("invalid identifier. identfier is to short: %s", t.Idenfitier)
+			}
+
+			urlIdent := split[0] + ":" + split[1]
+			c := deps.CacheRequest{
+				Name:   urlIdent,
+				System: "MAVEN",
+			}
+
+			// then query api
+			logger.Debug("Querying deps.dev", "name", c.Name, "system", c.System)
+			dep, err := deps.DepsWorkerDo(c)
+
+			logger.Debug("Query result", "dep", dep, "err", err)
+
+			return dep, err
 		},
 	}
 
-	dispatcher := tasks.Dispatcher[UniqueNames, UniqueNames]{
-		Worker:          worker,
-		NoWorker:        runtime.NumCPU(),
-		ResultCollector: writer,
-		Producer:        it,
+	writer := tasks.BufferedWriter[deps.Deps]{
+		Buffer: math.MaxInt,
+		DoWrite: func(t []*deps.Deps) error {
+			_, err := coll.InsertMany(context.TODO(), t)
+			return err
+		},
 	}
+
+	throttle := time.Second / 10
+	dispatcher := tasks.NewDispatcher(worker, slices.Values(mvn), writer, tasks.DispatcherConfig{RateLimit: &throttle})
 
 	dispatcher.Dispatch()
 
