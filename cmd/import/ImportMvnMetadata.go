@@ -101,7 +101,9 @@ func main() {
 			// then query api
 			logger.Debug("Querying deps.dev", "name", c.Name, "system", c.System)
 			dep, err := deps.DepsWorkerDo(c)
-
+			if err != nil {
+				logger.Error("Query failed", "name", c.Name, "system", c.System, "err", err)
+			}
 			logger.Debug("Query result", "dep", dep, "err", err)
 
 			return dep, err
