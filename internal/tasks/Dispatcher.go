@@ -77,7 +77,7 @@ func (d *Dispatcher[T, E]) Dispatch() {
 	var writeWg sync.WaitGroup
 
 	// setup workers
-	for i := 0; i < d.NoWorker; i++ {
+	for range d.NoWorker {
 		processWg.Add(1)
 		go d.Worker.Run(in, out, errc, &processWg)
 	}

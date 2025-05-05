@@ -20,11 +20,11 @@ import (
 )
 
 type UniqueNames struct {
-	Name string `bson:"_id" json:"_id"`
+	Name  string `bson:"_id" json:"_id"`
+	Count int    `bson:"count" json:"count"`
 }
 
 var out = flag.String("out", "", "File to write the SBOM to")
-var componentType = flag.String("componentType", "java-archive", "Component type to filter on")
 var logLevel = flag.Int("logLevel", 0, "Can be 0 for INFO, -4 for DEBUG, 4 for WARN, or 8 for ERROR. Defaults to INFO.")
 var dbName = flag.String("db", "sbom_metadata", "database name to connect to")
 var collectionName = flag.String("collection", "sboms", "collection name for SBOMs")
@@ -66,22 +66,23 @@ func main() {
 
 	sboms := client.Database(*dbName).Collection(*collectionName)
 
-	logger.Info("Export unique components called", "db", *dbName, "collection", *collectionName, "componentType", *componentType)
+	logger.Info("DB Query", "db", *dbName, "collection", *collectionName)
 
 	// prep db query
 	pipeline := mongo.Pipeline{
-		{
-			{Key: "$match", Value: bson.D{{Key: "components.type", Value: *componentType}}},
-		},
-		{
-			{Key: "$unwind", Value: "$components"},
-		},
-		{{Key: "$match", Value: bson.D{{Key: "components.type", Value: *componentType}}}},
-		{
-			{Key: "$group", Value: bson.D{
-				{Key: "_id", Value: "$components.name"},
+		{{Key: "$project", Value: bson.D{
+			{Key: "nameWithoutPostfix", Value: bson.D{
+				{Key: "$arrayElemAt", Value: bson.A{
+					bson.D{{Key: "$split", Value: bson.A{"$source.name", ":"}}},
+					0,
+				}},
 			}},
-		},
+		}}},
+		{{Key: "$group", Value: bson.D{
+			{Key: "_id", Value: "$nameWithoutPostfix"},
+			{Key: "count", Value: bson.D{{Key: "$sum", Value: 1}}},
+			// Add other aggregations if needed
+		}}},
 	}
 
 	cursor, err := sboms.Aggregate(context.TODO(), pipeline, options.Aggregate().SetBatchSize(1000))
@@ -95,12 +96,12 @@ func main() {
 	worker := tasks.Worker[UniqueNames, UniqueNames]{
 		Do: tasks.DoNothing[UniqueNames],
 	}
-
 	DoWrite := func(t []*UniqueNames) error {
 		outPath := filepath.Join(*out, "productNames.json")
 		logger.Info("write output called", "out path", outPath)
 		return json.StoreFile(outPath, t)
 	}
+
 	buffer := math.MaxInt
 
 	writer := tasks.NewBufferedWriter(DoWrite, tasks.BufferedWriterConfig{Buffer: &buffer})
