@@ -10,10 +10,10 @@ import (
 	"sbom-processor/internal/db"
 	"sbom-processor/internal/json"
 	"sbom-processor/internal/logging"
-	"sbom-processor/internal/tasks"
 	"sbom-processor/internal/validator"
 	"time"
 
+	"github.com/janniclas/beehive"
 	"go.mongodb.org/mongo-driver/v2/bson"
 	"go.mongodb.org/mongo-driver/v2/mongo"
 	"go.mongodb.org/mongo-driver/v2/mongo/options"
@@ -92,8 +92,8 @@ func main() {
 
 	it := db.MongodbIterator[UniqueNames](cursor)
 
-	worker := tasks.Worker[UniqueNames, UniqueNames]{
-		Do: tasks.DoNothing[UniqueNames],
+	worker := beehive.Worker[UniqueNames, UniqueNames]{
+		Work: beehive.DoNothing[UniqueNames],
 	}
 
 	DoWrite := func(t []*UniqueNames) error {
@@ -103,8 +103,8 @@ func main() {
 	}
 	buffer := math.MaxInt
 
-	writer := tasks.NewBufferedWriter(DoWrite, tasks.BufferedWriterConfig{Buffer: &buffer})
-	dispatcher := tasks.NewDispatcher(worker, it, *writer, tasks.DispatcherConfig{})
+	writer := beehive.NewBufferedCollector(DoWrite, beehive.BufferedCollectorConfig{BufferSize: &buffer})
+	dispatcher := beehive.NewDispatcher(worker, it, *writer, beehive.DispatcherConfig{})
 
 	dispatcher.Dispatch()
 

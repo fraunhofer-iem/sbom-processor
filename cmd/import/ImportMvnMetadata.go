@@ -10,12 +10,12 @@ import (
 	"os"
 	"sbom-processor/internal/deps"
 	"sbom-processor/internal/logging"
-	"sbom-processor/internal/tasks"
 	"sbom-processor/internal/validator"
 	"slices"
 	"strings"
 	"time"
 
+	"github.com/janniclas/beehive"
 	"go.mongodb.org/mongo-driver/v2/mongo"
 	"go.mongodb.org/mongo-driver/v2/mongo/options"
 )
@@ -83,8 +83,8 @@ func main() {
 		panic(err)
 	}
 
-	worker := tasks.Worker[MvnIdentifier, deps.Deps]{
-		Do: func(t *MvnIdentifier) (*deps.Deps, error) {
+	worker := beehive.Worker[MvnIdentifier, deps.Deps]{
+		Work: func(t *MvnIdentifier) (*deps.Deps, error) {
 			// first tranform u to CacheRequest
 			// the format is system dependent
 			split := strings.Split(t.Idenfitier, "|")
@@ -110,16 +110,16 @@ func main() {
 		},
 	}
 
-	writer := tasks.BufferedWriter[deps.Deps]{
-		Buffer: math.MaxInt,
-		DoWrite: func(t []*deps.Deps) error {
+	writer := beehive.BufferedCollector[deps.Deps]{
+		BufferSize: math.MaxInt,
+		Collect: func(t []*deps.Deps) error {
 			_, err := coll.InsertMany(context.TODO(), t)
 			return err
 		},
 	}
 
 	throttle := time.Second / 10
-	dispatcher := tasks.NewDispatcher(worker, slices.Values(mvn), writer, tasks.DispatcherConfig{RateLimit: &throttle})
+	dispatcher := beehive.NewDispatcher(worker, slices.Values(mvn), writer, beehive.DispatcherConfig{RateLimit: &throttle})
 
 	dispatcher.Dispatch()
 

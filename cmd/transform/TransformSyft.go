@@ -14,9 +14,9 @@ import (
 	"sbom-processor/internal/json"
 	"sbom-processor/internal/logging"
 	"sbom-processor/internal/sbom"
-	"sbom-processor/internal/tasks"
 	"sbom-processor/internal/validator"
 
+	"github.com/janniclas/beehive"
 	"go.mongodb.org/mongo-driver/v2/mongo"
 	"go.mongodb.org/mongo-driver/v2/mongo/options"
 )
@@ -68,13 +68,13 @@ func main() {
 
 	logger.Info("Starting syft to cyclonedx transformation", "path", *in, "mode", *mode)
 
-	var writer *tasks.BufferedWriter[sbom.CyclonedxSbom]
+	var writer *beehive.BufferedCollector[sbom.CyclonedxSbom]
 
 	if *mode == "file" {
 		buffer := 100
-		writer = tasks.NewBufferedWriter(
+		writer = beehive.NewBufferedCollector(
 			writeToFile,
-			tasks.BufferedWriterConfig{Buffer: &buffer})
+			beehive.BufferedCollectorConfig{BufferSize: &buffer})
 	} else {
 
 		// DB CONNECTION
@@ -97,22 +97,22 @@ func main() {
 		coll := client.Database(*dbName).Collection(*collectionName)
 
 		buffer := 200
-		writer = tasks.NewBufferedWriter(
+		writer = beehive.NewBufferedCollector(
 			func(t []*sbom.CyclonedxSbom) error {
 				_, err := coll.InsertMany(context.Background(), t)
 
 				return err
 			},
-			tasks.BufferedWriterConfig{Buffer: &buffer})
+			beehive.BufferedCollectorConfig{BufferSize: &buffer})
 	}
 
-	worker := tasks.Worker[string, sbom.CyclonedxSbom]{
-		Do: transformSbom,
+	worker := beehive.Worker[string, sbom.CyclonedxSbom]{
+		Work: transformSbom,
 	}
 	noWorker := runtime.NumCPU()
 
-	d := tasks.NewDispatcher(worker, slices.Values(paths), *writer,
-		tasks.DispatcherConfig{NoWorker: &noWorker})
+	d := beehive.NewDispatcher(worker, slices.Values(paths), *writer,
+		beehive.DispatcherConfig{NumWorker: &noWorker})
 
 	logger.Debug("Initialized dispatcher", "dispatcher", d)
 
